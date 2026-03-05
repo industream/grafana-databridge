@@ -2,16 +2,19 @@
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
   "name": "Industream DataBridge",
-  "id": "industream-industreamdatabridge-datasource",
+  "id": "industream-databridge-datasource",
   "metrics": true,
   "backend": true,
-  "executable": "gpx_industream_data_bridge",
+  "alerting": true,
+  "streaming": true,
+  "executable": "gpx_industream_databridge",
   "info": {
-    "description": "",
+    "description": "Query time series data from Industream DataBridge with DataCatalog asset navigation",
     "author": {
-      "name": "Industream"
+      "name": "Industream",
+      "url": "https://industream.com"
     },
-    "keywords": ["datasource"],
+    "keywords": ["datasource", "timeseries", "industrial", "iot", "scada"],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
@@ -22,7 +25,7 @@
     "updated": "%TODAY%"
   },
   "dependencies": {
-    "grafanaDependency": ">=12.3.0",
+    "grafanaDependency": ">=11.0.0",
     "plugins": []
   }
 }
