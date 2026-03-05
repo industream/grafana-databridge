@@ -64,6 +64,24 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 		return backend.ErrDataResponse(backend.StatusBadRequest, "database and dataset are required")
 	}
 
+	// Enforce safety limits for raw queries
+	if !qd.OptimizeDisplay {
+		estimatedRows := estimateRawRows(query.TimeRange, len(qd.Select))
+		if estimatedRows > int64(d.settings.HardLimitRows) {
+			return backend.ErrDataResponse(
+				backend.StatusBadRequest,
+				fmt.Sprintf("Query blocked: estimated %d rows exceeds hard limit of %d. Use Optimize Display.", estimatedRows, d.settings.HardLimitRows),
+			)
+		}
+		if estimatedRows > int64(d.settings.MaxRawRows) && qd.Limit == 0 {
+			qd.Limit = d.settings.MaxRawRows
+			d.logger.Warn("Auto-injecting row limit for large raw query",
+				"estimatedRows", estimatedRows,
+				"limit", d.settings.MaxRawRows,
+			)
+		}
+	}
+
 	// Build the DataBridge query
 	recordsQuery := buildRecordsQuery(&qd, query.TimeRange, query.MaxDataPoints)
 
@@ -285,6 +303,15 @@ func formatDuration(d time.Duration) string {
 	}
 
 	return fmt.Sprintf("%d second", int(d.Seconds()))
+}
+
+// estimateRawRows estimates the number of rows for a raw query (1 row/second assumption).
+func estimateRawRows(timeRange backend.TimeRange, columnCount int) int64 {
+	if columnCount == 0 {
+		columnCount = 1
+	}
+	rangeSeconds := int64(timeRange.To.Sub(timeRange.From).Seconds())
+	return rangeSeconds * int64(columnCount)
 }
 
 func aliasOrDefault(alias, fallback string) string {

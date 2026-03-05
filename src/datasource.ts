@@ -15,8 +15,11 @@ import {
 } from './types';
 
 export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridgeOptions> {
+  readonly settings: DataBridgeOptions;
+
   constructor(instanceSettings: DataSourceInstanceSettings<DataBridgeOptions>) {
     super(instanceSettings);
+    this.settings = instanceSettings.jsonData;
   }
 
   getDefaultQuery(_: CoreApp): Partial<DataBridgeQuery> {

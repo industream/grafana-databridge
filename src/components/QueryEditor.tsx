@@ -5,7 +5,6 @@ import { GrafanaTheme2, QueryEditorProps, SelectableValue } from '@grafana/data'
 
 import { DataSource } from '../datasource';
 import {
-  AggregationFunction,
   CatalogEntry,
   DataBridgeOptions,
   DataBridgeQuery,
@@ -16,11 +15,15 @@ import {
   QueryStrategy,
   SelectDefinition,
   SourceConnection,
+  AggregationFunction,
 } from '../types';
 import { useAssetTree } from '../hooks/useAssetTree';
+import { useRowEstimate } from '../hooks/useRowEstimate';
 import { AssetTree } from './AssetTree';
 import { SelectedTags } from './SelectedTags';
 import { DisplayNamePicker } from './DisplayNamePicker';
+import { SafetyBanner } from './SafetyBanner';
+import { QueryOptions } from './QueryOptions';
 
 type Props = QueryEditorProps<DataSource, DataBridgeQuery, DataBridgeOptions>;
 
@@ -34,19 +37,9 @@ const STRATEGY_OPTIONS: Array<SelectableValue<QueryStrategy>> = [
   { label: 'Table', value: 'table' },
 ];
 
-const AGGREGATION_OPTIONS = [
-  { label: 'Average', value: 'avg' as const },
-  { label: 'Minimum', value: 'min' as const },
-  { label: 'Maximum', value: 'max' as const },
-  { label: 'Sum', value: 'sum' as const },
-  { label: 'Count', value: 'count' as const },
-  { label: 'First', value: 'first' as const },
-  { label: 'Last', value: 'last' as const },
-];
-
 const LABEL_WIDTH = 16;
 
-export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) {
+export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: Props) {
   const styles = useStyles2(getStyles);
 
   // Raw mode state
@@ -60,6 +53,22 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
 
   // UI state
   const [isDisplayOpen, setIsDisplayOpen] = useState(false);
+
+  // Settings
+  const maxRawRows = datasource.settings.maxRawRows ?? 50_000;
+  const hardLimitRows = datasource.settings.hardLimitRows ?? 1_000_000;
+
+  const columnCount = (query.select ?? []).length || 1;
+
+  // Row estimation
+  const rowEstimate = useRowEstimate({
+    timeRange: range,
+    columnCount,
+    optimizeDisplay: query.optimizeDisplay ?? true,
+    maxDataPoints: 1000, // Grafana typical panel width
+    maxRawRows,
+    hardLimitRows,
+  });
 
   const updateQuery = useCallback(
     (patch: Partial<DataBridgeQuery>) => {
@@ -151,11 +160,9 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       const alreadySelected = currentSelect.some((s) => s.catalogEntryId === entry.id);
 
       if (alreadySelected) {
-        // Deselect
         const nextSelect = currentSelect.filter((s) => s.catalogEntryId !== entry.id);
         updateAndRun({ select: nextSelect });
       } else {
-        // Select with default aggregation based on label
         const defaultAgg = defaultAggregationForLabel(entry.labels);
         const newItem: SelectDefinition = {
           catalogEntryId: entry.id,
@@ -184,20 +191,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
       updateAndRun({ select: nextSelect });
     },
     [query.select, updateAndRun]
-  );
-
-  const handleDisplayPresetChange = useCallback(
-    (preset: DisplayNamePreset) => {
-      updateQuery({ displayNamePreset: preset });
-    },
-    [updateQuery]
-  );
-
-  const handleDisplayPatternChange = useCallback(
-    (pattern: string) => {
-      updateQuery({ displayNamePattern: pattern });
-    },
-    [updateQuery]
   );
 
   return (
@@ -311,17 +304,20 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         </InlineFieldRow>
       )}
 
-      {/* Aggregation */}
-      <InlineFieldRow>
-        <InlineField label="Aggregation" labelWidth={LABEL_WIDTH}>
-          <Combobox
-            options={AGGREGATION_OPTIONS}
-            value={query.aggregation ?? 'avg'}
-            onChange={(option) => updateAndRun({ aggregation: option.value as AggregationFunction })}
-            width={20}
-          />
-        </InlineField>
-      </InlineFieldRow>
+      {/* Safety banner */}
+      <SafetyBanner
+        estimate={rowEstimate}
+        optimizeDisplay={query.optimizeDisplay ?? true}
+        maxRawRows={maxRawRows}
+      />
+
+      {/* Query options: aggregation, filters, order, advanced */}
+      <QueryOptions
+        query={query}
+        timeWindowLabel={rowEstimate?.timeWindowLabel}
+        onUpdate={updateQuery}
+        onUpdateAndRun={updateAndRun}
+      />
 
       {/* Display name configuration (collapsible) */}
       <Collapse
@@ -333,8 +329,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
           preset={query.displayNamePreset ?? 'entryName'}
           pattern={query.displayNamePattern ?? ''}
           entries={catalogEntries}
-          onPresetChange={handleDisplayPresetChange}
-          onPatternChange={handleDisplayPatternChange}
+          onPresetChange={(preset) => updateQuery({ displayNamePreset: preset })}
+          onPatternChange={(pattern) => updateQuery({ displayNamePattern: pattern })}
         />
       </Collapse>
     </div>
