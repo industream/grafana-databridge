@@ -24,6 +24,7 @@ func (d *Datasource) resourceHandler() http.Handler {
 	mux.HandleFunc("GET /schema", d.handleGetSchema)
 	mux.HandleFunc("GET /catalog-entries", d.handleGetCatalogEntries)
 	mux.HandleFunc("GET /asset-tree", d.handleGetAssetTree)
+	mux.HandleFunc("GET /node-entries", d.handleGetNodeEntries)
 	mux.HandleFunc("GET /labels", d.handleGetLabels)
 
 	return mux
@@ -138,6 +139,26 @@ func (d *Datasource) handleGetAssetTree(w http.ResponseWriter, r *http.Request) 
 	}
 	d.assetCache.Set("all", trees)
 	writeJSON(w, trees)
+}
+
+func (d *Datasource) handleGetNodeEntries(w http.ResponseWriter, r *http.Request) {
+	if d.catalogClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "DataCatalog is not configured")
+		return
+	}
+
+	nodeId := r.URL.Query().Get("nodeId")
+	if nodeId == "" {
+		writeError(w, http.StatusBadRequest, "nodeId is required")
+		return
+	}
+
+	entries, err := d.catalogClient.ListNodeEntries(r.Context(), nodeId)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, entries)
 }
 
 func (d *Datasource) handleGetLabels(w http.ResponseWriter, r *http.Request) {

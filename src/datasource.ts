@@ -70,6 +70,10 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
     return this.getResource<AssetTree[]>('asset-tree');
   }
 
+  async getNodeEntries(nodeId: string): Promise<CatalogEntry[]> {
+    return this.getResource<CatalogEntry[]>('node-entries', { nodeId });
+  }
+
   async getLabels(): Promise<Label[]> {
     return this.getResource<Label[]>('labels');
   }

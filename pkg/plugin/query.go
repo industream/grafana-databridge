@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/data"
 
+	"github.com/industream/industream-data-bridge/pkg/datacatalog"
 	"github.com/industream/industream-data-bridge/pkg/databridge"
+	"github.com/industream/industream-data-bridge/pkg/displayname"
 	"github.com/industream/industream-data-bridge/pkg/models"
 )
 
@@ -75,6 +78,11 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 	frame, err := databridge.ToDataFrame(query.RefID, resp)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("convert frame: %v", err))
+	}
+
+	// Apply display names from catalog entries
+	if qd.Mode == "dataCatalog" {
+		d.applyDisplayNames(ctx, frame, &qd)
 	}
 
 	var dr backend.DataResponse
@@ -284,4 +292,77 @@ func aliasOrDefault(alias, fallback string) string {
 		return alias
 	}
 	return fallback
+}
+
+// applyDisplayNames sets display names on frame fields based on catalog entries.
+func (d *Datasource) applyDisplayNames(ctx context.Context, frame *data.Frame, qd *models.QueryDefinition) {
+	if d.catalogClient == nil || len(qd.Select) == 0 {
+		return
+	}
+
+	// Collect all catalog entry IDs
+	ids := make([]string, 0)
+	for _, s := range qd.Select {
+		if s.CatalogEntryId != "" {
+			ids = append(ids, s.CatalogEntryId)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	// Fetch entries (may be cached by the catalog client)
+	entries, err := d.catalogClient.GetEntriesByIds(ctx, ids)
+	if err != nil {
+		d.logger.Warn("Failed to fetch entries for display names", "error", err)
+		return
+	}
+
+	entryMap := make(map[string]*datacatalog.CatalogEntry, len(entries))
+	for i := range entries {
+		entryMap[entries[i].ID] = &entries[i]
+	}
+
+	// Build a map of column alias -> select definition for matching fields
+	selectByAlias := make(map[string]*models.SelectDefinition)
+	for i := range qd.Select {
+		s := &qd.Select[i]
+		alias := s.Alias
+		if alias == "" && s.Column != "" {
+			if s.Aggregation != "" {
+				alias = s.Column + "_" + s.Aggregation
+			} else {
+				alias = s.Column
+			}
+		}
+		selectByAlias[alias] = s
+	}
+
+	preset := qd.DisplayNamePreset
+	if preset == "" {
+		preset = d.settings.DefaultDisplayName
+	}
+	pattern := qd.DisplayNamePattern
+
+	for _, field := range frame.Fields {
+		s, ok := selectByAlias[field.Name]
+		if !ok {
+			continue
+		}
+
+		entry := entryMap[s.CatalogEntryId]
+		if entry == nil {
+			continue
+		}
+
+		resolved := displayname.Resolve(preset, pattern, &displayname.ResolveContext{
+			Entry:       entry,
+			Column:      s.Column,
+			Aggregation: s.Aggregation,
+		})
+
+		field.Config = &data.FieldConfig{
+			DisplayNameFromDS: resolved,
+		}
+	}
 }

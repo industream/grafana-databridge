@@ -1,18 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Combobox, InlineField, InlineFieldRow, RadioButtonGroup, Switch } from '@grafana/ui';
-import { QueryEditorProps, SelectableValue } from '@grafana/data';
+import { css } from '@emotion/css';
+import { Combobox, Collapse, InlineField, InlineFieldRow, RadioButtonGroup, Switch, useStyles2 } from '@grafana/ui';
+import { GrafanaTheme2, QueryEditorProps, SelectableValue } from '@grafana/data';
 
 import { DataSource } from '../datasource';
 import {
+  AggregationFunction,
+  CatalogEntry,
   DataBridgeOptions,
   DataBridgeQuery,
-  QueryMode,
-  QueryStrategy,
-  AggregationFunction,
-  SourceConnection,
   DatabaseInfo,
   DatasetInfo,
+  DisplayNamePreset,
+  QueryMode,
+  QueryStrategy,
+  SelectDefinition,
+  SourceConnection,
 } from '../types';
+import { useAssetTree } from '../hooks/useAssetTree';
+import { AssetTree } from './AssetTree';
+import { SelectedTags } from './SelectedTags';
+import { DisplayNamePicker } from './DisplayNamePicker';
 
 type Props = QueryEditorProps<DataSource, DataBridgeQuery, DataBridgeOptions>;
 
@@ -39,9 +47,19 @@ const AGGREGATION_OPTIONS = [
 const LABEL_WIDTH = 16;
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) {
+  const styles = useStyles2(getStyles);
+
+  // Raw mode state
   const [connections, setConnections] = useState<SourceConnection[]>([]);
   const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
+
+  // DataCatalog mode state
+  const assetTree = useAssetTree(datasource);
+  const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
+
+  // UI state
+  const [isDisplayOpen, setIsDisplayOpen] = useState(false);
 
   const updateQuery = useCallback(
     (patch: Partial<DataBridgeQuery>) => {
@@ -58,67 +76,132 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
     [onChange, onRunQuery, query]
   );
 
-  // Load connections on mount
+  // --- Raw mode data loading ---
+
   useEffect(() => {
     let cancelled = false;
     datasource.getConnections().then((data) => {
-      if (!cancelled) {
-        setConnections(data);
-      }
+      if (!cancelled) { setConnections(data); }
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [datasource]);
 
-  // Load databases when connection changes
   useEffect(() => {
-    if (!query.connectionId) {
-      return;
-    }
+    if (!query.connectionId) { return; }
     let cancelled = false;
     datasource.getDatabases(query.connectionId).then((data) => {
-      if (!cancelled) {
-        setDatabases(data);
-      }
+      if (!cancelled) { setDatabases(data); }
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [datasource, query.connectionId]);
 
-  // Load datasets when database changes
   useEffect(() => {
-    if (!query.connectionId || !query.databaseName) {
-      return;
-    }
+    if (!query.connectionId || !query.databaseName) { return; }
     let cancelled = false;
     datasource.getDatasets(query.connectionId, query.databaseName).then((data) => {
-      if (!cancelled) {
-        setDatasets(data);
-      }
+      if (!cancelled) { setDatasets(data); }
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [datasource, query.connectionId, query.databaseName]);
 
-  // Derive filtered options based on current query state (instead of clearing state in effects)
-  const filteredDatabaseOptions = useMemo(() => {
-    if (!query.connectionId) {
-      return [];
+  // --- DataCatalog mode: load entries for selected IDs ---
+
+  useEffect(() => {
+    const ids = (query.select ?? [])
+      .map((s) => s.catalogEntryId)
+      .filter((id): id is string => !!id);
+    if (ids.length === 0) {
+      return;
     }
+    let cancelled = false;
+    datasource.getCatalogEntries({ ids: ids.join(',') }).then((data) => {
+      if (!cancelled) { setCatalogEntries(data ?? []); }
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [datasource, query.select]);
+
+  // --- Derived options ---
+
+  const connectionOptions = useMemo(
+    () => connections.map((c) => ({ label: c.name, value: c.id })),
+    [connections]
+  );
+
+  const filteredDatabaseOptions = useMemo(() => {
+    if (!query.connectionId) { return []; }
     return databases.map((d) => ({ label: d.name, value: d.name }));
   }, [query.connectionId, databases]);
 
   const filteredDatasetOptions = useMemo(() => {
-    if (!query.connectionId || !query.databaseName) {
-      return [];
-    }
+    if (!query.connectionId || !query.databaseName) { return []; }
     return datasets.map((d) => ({ label: d.name, value: d.name }));
   }, [query.connectionId, query.databaseName, datasets]);
 
-  const connectionOptions = connections.map((c) => ({
-    label: c.name,
-    value: c.id,
-  }));
+  // --- Handlers ---
+
+  const selectedEntryIds = useMemo(() => {
+    return new Set(
+      (query.select ?? []).map((s) => s.catalogEntryId).filter((id): id is string => !!id)
+    );
+  }, [query.select]);
+
+  const handleSelectEntry = useCallback(
+    (entry: CatalogEntry) => {
+      const currentSelect = query.select ?? [];
+      const alreadySelected = currentSelect.some((s) => s.catalogEntryId === entry.id);
+
+      if (alreadySelected) {
+        // Deselect
+        const nextSelect = currentSelect.filter((s) => s.catalogEntryId !== entry.id);
+        updateAndRun({ select: nextSelect });
+      } else {
+        // Select with default aggregation based on label
+        const defaultAgg = defaultAggregationForLabel(entry.labels);
+        const newItem: SelectDefinition = {
+          catalogEntryId: entry.id,
+          column: entry.sourceParams?.column ?? entry.name,
+          aggregation: defaultAgg,
+        };
+        updateAndRun({ select: [...currentSelect, newItem] });
+      }
+    },
+    [query.select, updateAndRun]
+  );
+
+  const handleRemoveTag = useCallback(
+    (index: number) => {
+      const nextSelect = [...(query.select ?? [])];
+      nextSelect.splice(index, 1);
+      updateAndRun({ select: nextSelect });
+    },
+    [query.select, updateAndRun]
+  );
+
+  const handleAggregationChange = useCallback(
+    (index: number, aggregation: AggregationFunction) => {
+      const nextSelect = [...(query.select ?? [])];
+      nextSelect[index] = { ...nextSelect[index], aggregation };
+      updateAndRun({ select: nextSelect });
+    },
+    [query.select, updateAndRun]
+  );
+
+  const handleDisplayPresetChange = useCallback(
+    (preset: DisplayNamePreset) => {
+      updateQuery({ displayNamePreset: preset });
+    },
+    [updateQuery]
+  );
+
+  const handleDisplayPatternChange = useCallback(
+    (pattern: string) => {
+      updateQuery({ displayNamePattern: pattern });
+    },
+    [updateQuery]
+  );
 
   return (
-    <>
+    <div className={styles.container}>
       {/* Mode & Strategy row */}
       <InlineFieldRow>
         <InlineField label="Mode" labelWidth={LABEL_WIDTH}>
@@ -142,6 +225,42 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
           />
         </InlineField>
       </InlineFieldRow>
+
+      {/* DataCatalog mode: asset tree + selected tags */}
+      {(query.mode ?? 'dataCatalog') === 'dataCatalog' && (
+        <div className={styles.catalogSection}>
+          <div className={styles.twoColumn}>
+            <div className={styles.treePanel}>
+              <AssetTree
+                flatNodes={assetTree.flatNodes}
+                labels={assetTree.labels}
+                filteredEntries={assetTree.filteredEntries}
+                loading={assetTree.loading}
+                error={assetTree.error}
+                searchQuery={assetTree.searchQuery}
+                labelFilter={assetTree.labelFilter}
+                selectedEntryIds={selectedEntryIds}
+                onSearchChange={assetTree.setSearchQuery}
+                onLabelFilterChange={assetTree.setLabelFilter}
+                onToggleNode={assetTree.toggleNode}
+                onExpandAll={assetTree.expandAll}
+                onCollapseAll={assetTree.collapseAll}
+                onSelectEntry={handleSelectEntry}
+              />
+            </div>
+            <div className={styles.selectedPanel}>
+              <SelectedTags
+                select={query.select ?? []}
+                entries={catalogEntries}
+                displayNamePreset={query.displayNamePreset ?? 'entryName'}
+                displayNamePattern={query.displayNamePattern ?? ''}
+                onRemove={handleRemoveTag}
+                onAggregationChange={handleAggregationChange}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Raw mode: connection/database/dataset selectors */}
       {query.mode === 'raw' && (
@@ -192,15 +311,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
         </InlineFieldRow>
       )}
 
-      {/* DataCatalog mode placeholder */}
-      {query.mode === 'dataCatalog' && (
-        <InlineFieldRow>
-          <InlineField label="Catalog Entries" labelWidth={LABEL_WIDTH} tooltip="Select tags from the DataCatalog">
-            <div style={{ padding: '6px 0', color: '#888' }}>Asset tree browser (Phase 2)</div>
-          </InlineField>
-        </InlineFieldRow>
-      )}
-
       {/* Aggregation */}
       <InlineFieldRow>
         <InlineField label="Aggregation" labelWidth={LABEL_WIDTH}>
@@ -212,6 +322,70 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource }: Props) 
           />
         </InlineField>
       </InlineFieldRow>
-    </>
+
+      {/* Display name configuration (collapsible) */}
+      <Collapse
+        label={displaySummary(query.displayNamePreset ?? 'entryName')}
+        isOpen={isDisplayOpen}
+        onToggle={() => setIsDisplayOpen(!isDisplayOpen)}
+      >
+        <DisplayNamePicker
+          preset={query.displayNamePreset ?? 'entryName'}
+          pattern={query.displayNamePattern ?? ''}
+          entries={catalogEntries}
+          onPresetChange={handleDisplayPresetChange}
+          onPatternChange={handleDisplayPatternChange}
+        />
+      </Collapse>
+    </div>
   );
+}
+
+function defaultAggregationForLabel(labels: string[]): AggregationFunction {
+  if (labels.length === 0) {
+    return 'avg';
+  }
+  switch (labels[0].toLowerCase()) {
+    case 'analog': return 'avg';
+    case 'digital': return 'last';
+    case 'counter': return 'max';
+    default: return 'avg';
+  }
+}
+
+function displaySummary(preset: DisplayNamePreset): string {
+  switch (preset) {
+    case 'tagLevel1': return 'Display: Tag Level 1';
+    case 'descriptionEn': return 'Display: Description (EN)';
+    case 'descriptionDe': return 'Display: Description (DE)';
+    case 'assetPath': return 'Display: Asset Path';
+    case 'custom': return 'Display: Custom Pattern';
+    default: return 'Display: Entry Name';
+  }
+}
+
+function getStyles(theme: GrafanaTheme2) {
+  return {
+    container: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.5),
+    }),
+    catalogSection: css({
+      marginBottom: theme.spacing(0.5),
+    }),
+    twoColumn: css({
+      display: 'flex',
+      gap: theme.spacing(1),
+      minHeight: '200px',
+    }),
+    treePanel: css({
+      flex: 1,
+      minWidth: 0,
+    }),
+    selectedPanel: css({
+      flex: 1,
+      minWidth: 0,
+    }),
+  };
 }
