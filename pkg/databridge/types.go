@@ -7,7 +7,13 @@ type DatabaseInfo struct {
 
 // DatasetInfo represents a dataset from the DataBridge API.
 type DatasetInfo struct {
-	Name string `json:"name"`
+	Name    string       `json:"name"`
+	Columns []ColumnInfo `json:"columns,omitempty"`
+}
+
+// PaginatedResponse wraps items returned by the DataBridge API.
+type PaginatedResponse[T any] struct {
+	Items []T `json:"items"`
 }
 
 // DatasetSchema holds column information for a dataset.
@@ -18,7 +24,8 @@ type DatasetSchema struct {
 // ColumnInfo describes a single column.
 type ColumnInfo struct {
 	Name     string `json:"name"`
-	DataType string `json:"dataType"`
+	DataType string `json:"type"`
+	Indexed  bool   `json:"indexed"`
 }
 
 // RecordsQuery is the request body for POST /records/query.

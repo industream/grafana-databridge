@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -30,6 +31,7 @@ type Datasource struct {
 	entryCache      *cache.Store[[]datacatalog.CatalogEntry]
 	labelCache      *cache.Store[[]datacatalog.Label]
 	assetCache      *cache.Store[[]datacatalog.AssetDictionary]
+	assetPathCache  *cache.Store[map[string]string]
 	logger          log.Logger
 }
 
@@ -49,6 +51,7 @@ func NewDatasource(_ context.Context, settings backend.DataSourceInstanceSetting
 		entryCache:      cache.NewStore[[]datacatalog.CatalogEntry](ttl),
 		labelCache:      cache.NewStore[[]datacatalog.Label](ttl),
 		assetCache:      cache.NewStore[[]datacatalog.AssetDictionary](ttl),
+		assetPathCache:  cache.NewStore[map[string]string](ttl),
 	}
 
 	if pluginSettings.DataCatalogApiUrl != "" {
@@ -64,6 +67,7 @@ func (d *Datasource) Dispose() {
 	d.entryCache.Clear()
 	d.labelCache.Clear()
 	d.assetCache.Clear()
+	d.assetPathCache.Clear()
 }
 
 // dataBridgeClient creates a DataBridge client for the given URL.
@@ -74,10 +78,27 @@ func (d *Datasource) dataBridgeClient(url string) *databridge.Client {
 	return databridge.NewClient(url)
 }
 
-// resolveConnectionUrl returns the DataBridge URL to use for queries.
-// Always uses the configured DataBridgeApiUrl since each datasource instance
-// is already configured to point to the correct backend provider.
-func (d *Datasource) resolveConnectionUrl(_ context.Context, _ string) (string, error) {
+// resolveConnectionUrl returns the DataBridge URL for a given connection ID.
+// If a connection ID is provided and the DataCatalog is configured, it looks up the URL
+// from the source connection. Otherwise falls back to the configured DataBridgeApiUrl.
+func (d *Datasource) resolveConnectionUrl(ctx context.Context, connectionId string) (string, error) {
+	if connectionId != "" && d.catalogClient != nil {
+		conns, err := d.getConnections(ctx)
+		if err != nil {
+			return "", fmt.Errorf("fetch connections: %w", err)
+		}
+		for _, c := range conns {
+			if c.ID == connectionId {
+				if c.URL != "" {
+					return c.URL, nil
+				}
+				break
+			}
+		}
+	}
+	if d.settings.DataBridgeApiUrl == "" {
+		return "", fmt.Errorf("no DataBridge URL configured and connection %q not found", connectionId)
+	}
 	return d.settings.DataBridgeApiUrl, nil
 }
 

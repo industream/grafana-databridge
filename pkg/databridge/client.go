@@ -29,34 +29,35 @@ func NewClient(baseURL string) *Client {
 
 // ListDatabases returns available databases from a connection.
 func (c *Client) ListDatabases(ctx context.Context) ([]DatabaseInfo, error) {
-	var result []DatabaseInfo
+	var result PaginatedResponse[DatabaseInfo]
 	if err := c.get(ctx, "/databases", nil, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Items, nil
 }
 
 // ListDatasets returns datasets for a given database.
 func (c *Client) ListDatasets(ctx context.Context, databaseName string) ([]DatasetInfo, error) {
 	params := url.Values{"databaseName": {databaseName}}
-	var result []DatasetInfo
+	var result PaginatedResponse[DatasetInfo]
 	if err := c.get(ctx, "/datasets", params, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Items, nil
 }
 
-// GetSchema returns the column schema for a dataset.
+// GetSchema returns the column schema for a dataset by looking it up in the datasets list.
 func (c *Client) GetSchema(ctx context.Context, databaseName, datasetName string) (*DatasetSchema, error) {
-	params := url.Values{
-		"databaseName": {databaseName},
-		"datasetName":  {datasetName},
-	}
-	var result DatasetSchema
-	if err := c.get(ctx, "/schema", params, &result); err != nil {
+	datasets, err := c.ListDatasets(ctx, databaseName)
+	if err != nil {
 		return nil, err
 	}
-	return &result, nil
+	for _, ds := range datasets {
+		if ds.Name == datasetName {
+			return &DatasetSchema{Columns: ds.Columns}, nil
+		}
+	}
+	return nil, fmt.Errorf("dataset %q not found", datasetName)
 }
 
 // QueryRecords executes a records query and returns the raw JSON response body.

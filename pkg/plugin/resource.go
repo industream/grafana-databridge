@@ -266,6 +266,44 @@ func buildNodeTree(flat []datacatalog.AssetNode) []datacatalog.AssetNode {
 	return result
 }
 
+// getAssetPaths returns a cached map of entryId -> asset path string (e.g. "Plant > PostgreSQL > Counter").
+func (d *Datasource) getAssetPaths() map[string]string {
+	if paths, ok := d.assetPathCache.Get("all"); ok {
+		return paths
+	}
+
+	// Ensure asset tree is loaded
+	if d.catalogClient != nil {
+		d.ensureAssetTreeCached(context.Background())
+	}
+
+	trees, ok := d.assetCache.Get("all")
+	if !ok {
+		return nil
+	}
+
+	paths := make(map[string]string)
+	for _, tree := range trees {
+		buildAssetPaths(tree.Nodes, nil, paths)
+	}
+	d.assetPathCache.Set("all", paths)
+	return paths
+}
+
+// buildAssetPaths recursively builds entry paths from the asset tree.
+func buildAssetPaths(nodes []datacatalog.AssetNode, ancestors []string, paths map[string]string) {
+	for _, node := range nodes {
+		currentPath := append(append([]string{}, ancestors...), node.Name)
+		pathStr := strings.Join(currentPath, " > ")
+		for _, entryId := range node.EntryIds {
+			paths[entryId] = pathStr
+		}
+		if len(node.Children) > 0 {
+			buildAssetPaths(node.Children, currentPath, paths)
+		}
+	}
+}
+
 // findNodeEntryIds searches cached asset trees for a node's entryIds.
 func (d *Datasource) findNodeEntryIds(nodeId string) []string {
 	trees, ok := d.assetCache.Get("all")

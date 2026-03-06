@@ -17,12 +17,8 @@ interface QueryOptionsProps {
   query: DataBridgeQuery;
   onUpdate: (patch: Partial<DataBridgeQuery>) => void;
   onUpdateAndRun: (patch: Partial<DataBridgeQuery>) => void;
+  isMultiDataset?: boolean;
 }
-
-const ORDER_DIRECTION_OPTIONS = [
-  { label: 'ASC', value: 'asc' as const },
-  { label: 'DESC', value: 'desc' as const },
-];
 
 const LABEL_WIDTH = 14;
 
@@ -36,104 +32,38 @@ function countConditions(filter?: FilterDefinition): number {
   return 1;
 }
 
-export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsProps) {
+export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset }: QueryOptionsProps) {
   const styles = useStyles2(getStyles);
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [isOrderOpen, setIsOrderOpen] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   const filterCount = countConditions(query.where);
-  const filterSummary = filterCount > 0 ? `${filterCount} filter(s)` : '(none)';
-
-  const orderSummary = query.orderByColumn
-    ? `${query.orderByColumn} ${query.orderByDirection ?? 'asc'}`
-    : 'time asc (default)';
-
-  const advancedSummary = [
-    query.limit ? `limit ${query.limit}` : null,
-    query.offset ? `offset ${query.offset}` : null,
-  ]
-    .filter(Boolean)
-    .join(', ') || '(none)';
+  const filterSummary = isMultiDataset
+    ? 'disabled (multiple datasets)'
+    : filterCount > 0 ? `${filterCount} filter(s)` : '(none)';
 
   return (
     <div className={styles.container}>
-      {/* Filters (WHERE) — collapsible */}
-      <Collapse
-        label={`Filters (WHERE): ${filterSummary}`}
-        isOpen={isFiltersOpen}
-        onToggle={() => setIsFiltersOpen(!isFiltersOpen)}
-      >
-        <FilterGroupEditor
-          group={ensureGroup(query.where)}
-          isRoot
-          onChange={(where) => onUpdate({ where })}
-          onRunQuery={() => onUpdateAndRun({})}
-        />
-      </Collapse>
+      {/* Filters (WHERE) — collapsible, disabled when tags span multiple datasets */}
+      <div className={isMultiDataset ? styles.disabledSection : undefined}>
+        <Collapse
+          label={`Filters (WHERE): ${filterSummary}`}
+          isOpen={isMultiDataset ? false : isFiltersOpen}
+          onToggle={() => {
+            if (!isMultiDataset) {
+              setIsFiltersOpen(!isFiltersOpen);
+            }
+          }}
+        >
+          <FilterGroupEditor
+            group={ensureGroup(query.where)}
+            isRoot
+            onChange={(where) => onUpdate({ where })}
+            onRunQuery={() => onUpdateAndRun({})}
+          />
+        </Collapse>
+      </div>
 
-      {/* Order By — collapsible */}
-      <Collapse
-        label={`Order By: ${orderSummary}`}
-        isOpen={isOrderOpen}
-        onToggle={() => setIsOrderOpen(!isOrderOpen)}
-      >
-        <InlineFieldRow>
-          <InlineField label="Column" labelWidth={LABEL_WIDTH}>
-            <Input
-              value={query.orderByColumn ?? ''}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                onUpdate({ orderByColumn: e.target.value || undefined })
-              }
-              placeholder="time"
-              width={20}
-            />
-          </InlineField>
-          <InlineField label="Direction" labelWidth={LABEL_WIDTH}>
-            <Combobox
-              options={ORDER_DIRECTION_OPTIONS}
-              value={query.orderByDirection ?? 'asc'}
-              onChange={(option) => onUpdateAndRun({ orderByDirection: option.value as 'asc' | 'desc' })}
-              width={12}
-            />
-          </InlineField>
-        </InlineFieldRow>
-      </Collapse>
-
-      {/* Advanced (limit/offset) — collapsible */}
-      <Collapse
-        label={`Advanced: ${advancedSummary}`}
-        isOpen={isAdvancedOpen}
-        onToggle={() => setIsAdvancedOpen(!isAdvancedOpen)}
-      >
-        <InlineFieldRow>
-          <InlineField label="Limit" labelWidth={LABEL_WIDTH}>
-            <Input
-              type="number"
-              value={query.limit ?? ''}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                const v = parseInt(e.target.value, 10);
-                onUpdate({ limit: isNaN(v) ? undefined : v });
-              }}
-              placeholder="No limit"
-              width={16}
-            />
-          </InlineField>
-          <InlineField label="Offset" labelWidth={LABEL_WIDTH}>
-            <Input
-              type="number"
-              value={query.offset ?? ''}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                const v = parseInt(e.target.value, 10);
-                onUpdate({ offset: isNaN(v) ? undefined : v });
-              }}
-              placeholder="0"
-              width={16}
-            />
-          </InlineField>
-        </InlineFieldRow>
-      </Collapse>
     </div>
   );
 }
@@ -305,6 +235,10 @@ function getStyles(theme: GrafanaTheme2) {
       display: 'flex',
       flexDirection: 'column',
       gap: theme.spacing(0.25),
+    }),
+    disabledSection: css({
+      opacity: 0.5,
+      pointerEvents: 'none',
     }),
     filterContainer: css({
       display: 'flex',

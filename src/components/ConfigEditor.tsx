@@ -2,7 +2,7 @@ import React, { ChangeEvent } from 'react';
 import { FieldSet, InlineField, InlineFieldRow, Input, SecretInput, Combobox } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 
-import { DataBridgeOptions, DataBridgeSecureJsonData, DisplayNamePreset, AggregationOrNone } from '../types';
+import { DataBridgeOptions, DataBridgeSecureJsonData, DisplayNamePreset } from '../types';
 
 interface Props extends DataSourcePluginOptionsEditorProps<DataBridgeOptions, DataBridgeSecureJsonData> {}
 
@@ -13,17 +13,6 @@ const DISPLAY_NAME_OPTIONS = [
   { label: 'Description (DE)', value: 'descriptionDe' as const },
   { label: 'Asset Path', value: 'assetPath' as const },
   { label: 'Custom Pattern', value: 'custom' as const },
-];
-
-const AGGREGATION_OPTIONS = [
-  { label: 'None (raw data)', value: 'none' as const },
-  { label: 'Average', value: 'avg' as const },
-  { label: 'Minimum', value: 'min' as const },
-  { label: 'Maximum', value: 'max' as const },
-  { label: 'Sum', value: 'sum' as const },
-  { label: 'Count', value: 'count' as const },
-  { label: 'First', value: 'first' as const },
-  { label: 'Last', value: 'last' as const },
 ];
 
 const LABEL_WIDTH = 24;
@@ -66,30 +55,12 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
   return (
     <>
       <FieldSet label="Connection">
-        <InlineField label="DataBridge API URL" labelWidth={LABEL_WIDTH} tooltip="Base URL of the DataBridge API">
-          <Input
-            id="config-databridge-url"
-            onChange={onInputChange('dataBridgeApiUrl')}
-            value={jsonData.dataBridgeApiUrl ?? ''}
-            placeholder="http://localhost:8002"
-            width={INPUT_WIDTH}
-          />
-        </InlineField>
-        <InlineField label="DataCatalog API URL" labelWidth={LABEL_WIDTH} tooltip="Base URL of the DataCatalog API">
+        <InlineField label="DataCatalog API URL" labelWidth={LABEL_WIDTH} tooltip="URL of the DataCatalog API. DataBridge URLs are resolved automatically from source connections.">
           <Input
             id="config-datacatalog-url"
             onChange={onInputChange('dataCatalogApiUrl')}
             value={jsonData.dataCatalogApiUrl ?? ''}
             placeholder="http://localhost:8010"
-            width={INPUT_WIDTH}
-          />
-        </InlineField>
-        <InlineField label="Source Connection ID" labelWidth={LABEL_WIDTH} tooltip="DataCatalog source connection ID — filters the asset tree to only show entries from this connection">
-          <Input
-            id="config-source-connection-id"
-            onChange={onInputChange('sourceConnectionId')}
-            value={jsonData.sourceConnectionId ?? ''}
-            placeholder="(optional) UUID from DataCatalog"
             width={INPUT_WIDTH}
           />
         </InlineField>
@@ -114,17 +85,6 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
               options={DISPLAY_NAME_OPTIONS}
               value={jsonData.defaultDisplayNamePreset ?? 'entryName'}
               onChange={(option) => updateJsonData('defaultDisplayNamePreset', option.value as DisplayNamePreset)}
-              width={INPUT_WIDTH}
-            />
-          </InlineField>
-        </InlineFieldRow>
-        <InlineFieldRow>
-          <InlineField label="Default Aggregation" labelWidth={LABEL_WIDTH} tooltip="Default for new queries. None = raw data, others enable optimized display with time_window grouping">
-            <Combobox
-              id="config-aggregation"
-              options={AGGREGATION_OPTIONS}
-              value={jsonData.defaultAggregation ?? 'avg'}
-              onChange={(option) => updateJsonData('defaultAggregation', option.value as AggregationOrNone)}
               width={INPUT_WIDTH}
             />
           </InlineField>

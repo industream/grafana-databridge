@@ -21,6 +21,8 @@ export type AggregationFunction =
 
 export type AggregationOrNone = AggregationFunction | 'none';
 
+export type TagOperation = AggregationFunction | 'optimized' | 'none';
+
 export type DisplayNamePreset =
   | 'entryName'
   | 'tagLevel1'
@@ -32,7 +34,8 @@ export type DisplayNamePreset =
 export interface SelectDefinition {
   catalogEntryId?: string;
   column?: string;
-  aggregation?: AggregationFunction;
+  dataType?: string;
+  aggregation?: TagOperation;
   alias?: string;
   displayNamePreset?: DisplayNamePreset;
   displayNamePattern?: string;
@@ -143,7 +146,7 @@ export interface DatasetInfo {
 
 export interface ColumnInfo {
   name: string;
-  dataType: string;
+  type: string;
 }
 
 export interface DatasetSchema {

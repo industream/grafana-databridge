@@ -3,26 +3,30 @@ import { css } from '@emotion/css';
 import { Badge, Combobox, IconButton, Tooltip, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { AggregationFunction, CatalogEntry, DisplayNamePreset, SelectDefinition } from '../types';
+import { CatalogEntry, DisplayNamePreset, SelectDefinition, TagOperation } from '../types';
 import { resolveDisplayName } from '../hooks/useDisplayName';
+import { dataTypeColor, labelColor } from '../utils/colors';
 
 interface SelectedTagsProps {
   select: SelectDefinition[];
   entries: CatalogEntry[];
   displayNamePreset: DisplayNamePreset;
   displayNamePattern: string;
+  assetPaths?: Record<string, string>;
   onRemove: (index: number) => void;
-  onAggregationChange: (index: number, aggregation: AggregationFunction) => void;
+  onAggregationChange: (index: number, operation: TagOperation) => void;
 }
 
-const AGGREGATION_OPTIONS = [
-  { label: 'avg', value: 'avg' as const },
-  { label: 'min', value: 'min' as const },
-  { label: 'max', value: 'max' as const },
-  { label: 'sum', value: 'sum' as const },
-  { label: 'count', value: 'count' as const },
-  { label: 'first', value: 'first' as const },
-  { label: 'last', value: 'last' as const },
+const OPERATION_OPTIONS = [
+  { label: 'Optimized', value: 'optimized' },
+  { label: 'Raw', value: 'none' },
+  { label: 'avg', value: 'avg' },
+  { label: 'min', value: 'min' },
+  { label: 'max', value: 'max' },
+  { label: 'sum', value: 'sum' },
+  { label: 'count', value: 'count' },
+  { label: 'first', value: 'first' },
+  { label: 'last', value: 'last' },
 ];
 
 export function SelectedTags({
@@ -30,6 +34,7 @@ export function SelectedTags({
   entries,
   displayNamePreset,
   displayNamePattern,
+  assetPaths,
   onRemove,
   onAggregationChange,
 }: SelectedTagsProps) {
@@ -45,28 +50,55 @@ export function SelectedTags({
     <div className={styles.container}>
       {select.map((item, index) => {
         const entry = item.catalogEntryId ? entryMap.get(item.catalogEntryId) : undefined;
+        const rawPath = item.catalogEntryId ? assetPaths?.[item.catalogEntryId] : undefined;
+        const entryPath = rawPath ? `${rawPath} > ${entry?.name ?? ''}` : undefined;
         const displayName = resolveDisplayName(entry, displayNamePreset, displayNamePattern, {
           column: item.column,
           aggregation: item.aggregation,
+          assetPath: entryPath,
         });
+
+        const meta = entry?.metadata;
+        const tooltipLines = [
+          meta?.tagLevel1 ?? item.column ?? '',
+          meta?.description?.['en-US'] ? `${meta.description['en-US']}` : '',
+          meta?.unit ? `Unit: ${meta.unit}` : '',
+          meta?.min != null && meta?.max != null ? `Range: ${meta.min} – ${meta.max}` : '',
+          meta?.decimals != null ? `Decimals: ${meta.decimals}` : '',
+        ].filter(Boolean).join('\n');
+
+        const rangeLabel = meta?.min != null && meta?.max != null
+          ? `${meta.min}..${meta.max}`
+          : undefined;
 
         return (
           <div key={item.catalogEntryId ?? item.column ?? index} className={styles.tagRow}>
-            <Tooltip content={entry?.metadata?.tagLevel1 ?? item.column ?? ''} placement="top">
+            <Tooltip content={tooltipLines} placement="top">
               <span className={styles.tagName}>{displayName}</span>
             </Tooltip>
 
-            {entry?.metadata?.unit && <span className={styles.unit}>{entry.metadata.unit}</span>}
+            {entry?.dataType && (
+              <Badge text={entry.dataType} color={dataTypeColor(entry.dataType)} className={styles.typeBadge} />
+            )}
+
+            {meta?.unit && <span className={styles.unit}>{meta.unit}</span>}
+
+            {rangeLabel && <span className={styles.range}>[{rangeLabel}]</span>}
 
             {entry && entry.labels.length > 0 && (
               <Badge text={entry.labels[0].name} color={labelColor(entry.labels[0].name)} className={styles.label} />
             )}
+            {entry && entry.labels.length > 1 && (
+              <Tooltip content={entry.labels.map((l) => l.name).join(', ')} placement="top">
+                <Badge text={`+${entry.labels.length - 1}`} color="blue" className={styles.label} />
+              </Tooltip>
+            )}
 
             <Combobox
-              options={AGGREGATION_OPTIONS}
-              value={item.aggregation ?? 'avg'}
-              onChange={(option) => onAggregationChange(index, option.value as AggregationFunction)}
-              width={10}
+              options={OPERATION_OPTIONS}
+              value={item.aggregation ?? 'optimized'}
+              onChange={(option) => onAggregationChange(index, option.value as TagOperation)}
+              width={12}
             />
 
             <IconButton name="times" tooltip="Remove" onClick={() => onRemove(index)} size="sm" />
@@ -75,16 +107,6 @@ export function SelectedTags({
       })}
     </div>
   );
-}
-
-function labelColor(label: string): 'blue' | 'green' | 'orange' | 'red' | 'purple' {
-  switch (label.toLowerCase()) {
-    case 'analog': return 'blue';
-    case 'digital': return 'green';
-    case 'counter': return 'orange';
-    case 'event': return 'purple';
-    default: return 'blue';
-  }
 }
 
 function getStyles(theme: GrafanaTheme2) {
@@ -116,6 +138,15 @@ function getStyles(theme: GrafanaTheme2) {
       fontSize: theme.typography.bodySmall.fontSize,
       color: theme.colors.text.secondary,
       flexShrink: 0,
+    }),
+    range: css({
+      fontSize: theme.typography.bodySmall.fontSize,
+      color: theme.colors.text.disabled,
+      flexShrink: 0,
+    }),
+    typeBadge: css({
+      flexShrink: 0,
+      transform: 'scale(0.85)',
     }),
     label: css({
       flexShrink: 0,

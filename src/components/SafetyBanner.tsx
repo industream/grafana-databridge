@@ -22,12 +22,7 @@ export function SafetyBanner({ estimate, optimizeDisplay, maxRawRows }: SafetyBa
     return (
       <div className={styles.container}>
         <div className={styles.infoLine}>
-          <span className={styles.icon}>~</span>
-          <span>{formatNumber(estimate.optimizedRows)} pts</span>
-          <span className={styles.separator}>&middot;</span>
-          <span>{formatBytes(estimate.optimizedSizeBytes)}</span>
-          <span className={styles.separator}>&middot;</span>
-          <span>window {estimate.timeWindowLabel}</span>
+          <span>Max {formatNumber(maxRawRows)} pts</span>
           <span className={styles.safeTag}>Optimized</span>
         </div>
       </div>
@@ -58,7 +53,7 @@ export function SafetyBanner({ estimate, optimizeDisplay, maxRawRows }: SafetyBa
             </div>
             <div className={styles.hint}>
               LIMIT {formatNumber(maxRawRows)} will be applied. Switch to Optimize Display for better
-              performance (~{formatNumber(estimate.optimizedRows)} pts, {estimate.timeWindowLabel} window).
+              performance (~{formatNumber(estimate.optimizedRows)} pts).
             </div>
           </div>
         </Alert>
@@ -74,8 +69,7 @@ export function SafetyBanner({ estimate, optimizeDisplay, maxRawRows }: SafetyBa
             </div>
             <div className={styles.hint}>
               Reduce the time range or switch to Optimize Display
-              (~{formatNumber(estimate.optimizedRows)} pts, ~{formatBytes(estimate.optimizedSizeBytes)},
-              {estimate.timeWindowLabel} window).
+              (~{formatNumber(estimate.optimizedRows)} pts).
             </div>
             <div className={styles.limitNotice}>
               Max rows: {formatNumber(maxRawRows)} applied automatically.
@@ -94,7 +88,7 @@ export function SafetyBanner({ estimate, optimizeDisplay, maxRawRows }: SafetyBa
             </div>
             <div className={styles.hint}>
               Use Optimize Display (~{formatNumber(estimate.optimizedRows)} pts,
-              ~{formatBytes(estimate.optimizedSizeBytes)}, {estimate.timeWindowLabel} window).
+              ~{formatBytes(estimate.optimizedSizeBytes)}).
             </div>
           </div>
         </Alert>

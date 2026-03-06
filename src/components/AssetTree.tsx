@@ -1,10 +1,11 @@
 import React from 'react';
 import { css } from '@emotion/css';
-import { Badge, Combobox, FilterInput, Icon, IconButton, Spinner, Stack, useStyles2 } from '@grafana/ui';
+import { Badge, Combobox, FilterInput, Icon, IconButton, Spinner, Stack, Tooltip, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
 import { CatalogEntry, Label } from '../types';
 import { FlatTreeNode } from '../hooks/useAssetTree';
+import { dataTypeColor, labelColor } from '../utils/colors';
 
 interface AssetTreeProps {
   flatNodes: FlatTreeNode[];
@@ -213,22 +214,25 @@ function EntryRow({ entry, isSelected, onSelect }: EntryRowProps) {
     >
       <Icon name={isSelected ? 'check-circle' : 'circle'} size="sm" className={styles.entryCheckIcon} />
       <span className={styles.entryName}>{entry.name}</span>
+
+      {/* Metadata group: type, tag, unit */}
+      {entry.dataType && (
+        <Badge text={entry.dataType} color={dataTypeColor(entry.dataType)} className={styles.typeBadge} />
+      )}
       {entry.metadata?.tagLevel1 && <span className={styles.entryTag}>{entry.metadata.tagLevel1}</span>}
+      {entry.metadata?.unit && <span className={styles.entryUnit}>{entry.metadata.unit}</span>}
+
+      {/* Labels group */}
       {entry.labels.length > 0 && (
         <Badge text={entry.labels[0].name} color={labelColor(entry.labels[0].name)} className={styles.entryLabel} />
       )}
+      {entry.labels.length > 1 && (
+        <Tooltip content={entry.labels.map((l) => l.name).join(', ')} placement="top">
+          <Badge text={`+${entry.labels.length - 1}`} color="blue" className={styles.entryLabel} />
+        </Tooltip>
+      )}
     </button>
   );
-}
-
-function labelColor(label: string): 'blue' | 'green' | 'orange' | 'red' | 'purple' {
-  switch (label.toLowerCase()) {
-    case 'analog': return 'blue';
-    case 'digital': return 'green';
-    case 'counter': return 'orange';
-    case 'event': return 'purple';
-    default: return 'blue';
-  }
 }
 
 // --- Styles ---
@@ -334,6 +338,15 @@ function getStyles(theme: GrafanaTheme2) {
       overflow: 'hidden',
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
+    }),
+    entryUnit: css({
+      fontSize: theme.typography.bodySmall.fontSize,
+      color: theme.colors.text.secondary,
+      flexShrink: 0,
+    }),
+    typeBadge: css({
+      flexShrink: 0,
+      transform: 'scale(0.85)',
     }),
     entryLabel: css({
       flexShrink: 0,

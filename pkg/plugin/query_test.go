@@ -68,9 +68,8 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 		Mode:            "raw",
 		Strategy:        "timeseries",
 		OptimizeDisplay: true,
-		Aggregation:     "avg",
 		Select: []models.SelectDefinition{
-			{Column: "temperature"},
+			{Column: "temperature", Aggregation: "avg"},
 			{Column: "humidity", Aggregation: "max"},
 		},
 	}
@@ -85,7 +84,7 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 		t.Fatalf("expected 3 select clauses (2 data + 1 time_window), got %d", len(rq.Select))
 	}
 
-	// First column should use query-level aggregation
+	// First column should use per-tag aggregation
 	if rq.Select[0].Function != "avg" {
 		t.Errorf("expected function avg, got %s", rq.Select[0].Function)
 	}

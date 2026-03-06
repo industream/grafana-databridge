@@ -6,6 +6,7 @@ import { GrafanaTheme2, QueryEditorProps, SelectableValue } from '@grafana/data'
 import { DataSource } from '../datasource';
 import {
   CatalogEntry,
+  ColumnInfo,
   DataBridgeOptions,
   DataBridgeQuery,
   DatabaseInfo,
@@ -15,13 +16,13 @@ import {
   QueryStrategy,
   SelectDefinition,
   SourceConnection,
-  AggregationFunction,
-  AggregationOrNone,
+  TagOperation,
 } from '../types';
 import { useAssetTree } from '../hooks/useAssetTree';
 import { useRowEstimate } from '../hooks/useRowEstimate';
 import { AssetTree } from './AssetTree';
 import { SelectedTags } from './SelectedTags';
+import { RawColumnSelector } from './RawColumnSelector';
 import { DisplayNamePicker } from './DisplayNamePicker';
 import { SafetyBanner } from './SafetyBanner';
 import { QueryOptions } from './QueryOptions';
@@ -38,20 +39,6 @@ const STRATEGY_OPTIONS: Array<SelectableValue<QueryStrategy>> = [
   { label: 'Table', value: 'table' },
 ];
 
-type AggregationOption = AggregationOrNone | 'auto';
-
-const AGGREGATION_OPTIONS: Array<{ label: string; value: AggregationOption }> = [
-  { label: 'None (raw data)', value: 'none' },
-  { label: 'Optimized Display', value: 'auto' },
-  { label: 'Average', value: 'avg' },
-  { label: 'Minimum', value: 'min' },
-  { label: 'Maximum', value: 'max' },
-  { label: 'Sum', value: 'sum' },
-  { label: 'Count', value: 'count' },
-  { label: 'First', value: 'first' },
-  { label: 'Last', value: 'last' },
-];
-
 const LABEL_WIDTH = 16;
 
 export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: Props) {
@@ -61,6 +48,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
   const [connections, setConnections] = useState<SourceConnection[]>([]);
   const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
+  const [schemaColumns, setSchemaColumns] = useState<ColumnInfo[]>([]);
 
   // DataCatalog mode state
   const assetTree = useAssetTree(datasource);
@@ -75,11 +63,35 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
 
   const columnCount = (query.select ?? []).length || 1;
 
+  // Derive optimizeDisplay from tags: true if any tag is not 'none'
+  const optimizeDisplay = useMemo(() => {
+    const select = query.select ?? [];
+    if (select.length === 0) {
+      return true;
+    }
+    return select.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+  }, [query.select]);
+
+  // Detect multi-dataset: WHERE filters are disabled when tags span different datasets
+  const isMultiDataset = useMemo(() => {
+    if (catalogEntries.length <= 1) {
+      return false;
+    }
+    const keys = new Set<string>();
+    for (const entry of catalogEntries) {
+      const connId = entry.sourceConnection?.id ?? entry.sourceConnectionId ?? '';
+      const db = entry.sourceParams?.database ?? '';
+      const ds = entry.sourceParams?.dataset ?? '';
+      keys.add(`${connId}|${db}|${ds}`);
+    }
+    return keys.size > 1;
+  }, [catalogEntries]);
+
   // Row estimation
   const rowEstimate = useRowEstimate({
     timeRange: range,
     columnCount,
-    optimizeDisplay: query.optimizeDisplay ?? true,
+    optimizeDisplay,
     maxDataPoints: 1000, // Grafana typical panel width
     maxRawRows,
     hardLimitRows,
@@ -99,14 +111,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     },
     [onChange, onRunQuery, query]
   );
-
-  // Derive aggregation display value for the dropdown
-  const defaultAgg = datasource.settings.defaultAggregation ?? 'avg';
-  const currentAggregation: AggregationOption = !(query.optimizeDisplay ?? true)
-    ? 'none'
-    : query.aggregation
-      ? query.aggregation
-      : 'auto';
 
   // --- Raw mode data loading ---
 
@@ -135,6 +139,19 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     }).catch(console.error);
     return () => { cancelled = true; };
   }, [datasource, query.connectionId, query.databaseName]);
+
+  // Load schema columns when dataset is selected in Raw mode
+  useEffect(() => {
+    if (!query.connectionId || !query.databaseName || !query.datasetName) {
+      setSchemaColumns([]);
+      return;
+    }
+    let cancelled = false;
+    datasource.getSchema(query.connectionId, query.databaseName, query.datasetName).then((schema) => {
+      if (!cancelled) { setSchemaColumns(schema.columns ?? []); }
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [datasource, query.connectionId, query.databaseName, query.datasetName]);
 
   // --- DataCatalog mode: load entries for selected IDs ---
 
@@ -186,13 +203,13 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         const nextSelect = currentSelect.filter((s) => s.catalogEntryId !== entry.id);
         updateAndRun({ select: nextSelect });
       } else {
-        const defaultAgg = defaultAggregationForLabel(entry.labels);
         const newItem: SelectDefinition = {
           catalogEntryId: entry.id,
           column: entry.sourceParams?.column ?? entry.name,
-          aggregation: defaultAgg,
+          dataType: entry.dataType,
+          aggregation: 'optimized',
         };
-        updateAndRun({ select: [...currentSelect, newItem] });
+        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: true });
       }
     },
     [query.select, updateAndRun]
@@ -202,23 +219,69 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     (index: number) => {
       const nextSelect = [...(query.select ?? [])];
       nextSelect.splice(index, 1);
-      updateAndRun({ select: nextSelect });
+      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
     },
     [query.select, updateAndRun]
   );
 
   const handleAggregationChange = useCallback(
-    (index: number, aggregation: AggregationFunction) => {
+    (index: number, operation: TagOperation) => {
       const nextSelect = [...(query.select ?? [])];
-      nextSelect[index] = { ...nextSelect[index], aggregation };
-      updateAndRun({ select: nextSelect });
+      nextSelect[index] = { ...nextSelect[index], aggregation: operation };
+      // Derive optimizeDisplay for the backend
+      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
+    },
+    [query.select, updateAndRun]
+  );
+
+  // --- Raw mode column handlers ---
+
+  const handleToggleRawColumn = useCallback(
+    (column: ColumnInfo) => {
+      const currentSelect = query.select ?? [];
+      const existingIndex = currentSelect.findIndex((s) => s.column === column.name);
+
+      if (existingIndex >= 0) {
+        const nextSelect = currentSelect.filter((_, i) => i !== existingIndex);
+        const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+        updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation || nextSelect.length === 0 });
+      } else {
+        const newItem: SelectDefinition = {
+          column: column.name,
+          dataType: column.type,
+          aggregation: 'optimized',
+        };
+        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: true });
+      }
+    },
+    [query.select, updateAndRun]
+  );
+
+  const handleRemoveRawColumn = useCallback(
+    (index: number) => {
+      const nextSelect = [...(query.select ?? [])];
+      nextSelect.splice(index, 1);
+      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation || nextSelect.length === 0 });
+    },
+    [query.select, updateAndRun]
+  );
+
+  const handleRawAggregationChange = useCallback(
+    (index: number, operation: TagOperation) => {
+      const nextSelect = [...(query.select ?? [])];
+      nextSelect[index] = { ...nextSelect[index], aggregation: operation };
+      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
     },
     [query.select, updateAndRun]
   );
 
   return (
     <div className={styles.container}>
-      {/* Mode, Strategy & Aggregation row */}
+      {/* Mode & Strategy row */}
       <InlineFieldRow>
         <InlineField label="Mode" labelWidth={LABEL_WIDTH}>
           <RadioButtonGroup
@@ -234,28 +297,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
             onChange={(value) => updateAndRun({ strategy: value })}
           />
         </InlineField>
-        <InlineField label="Aggregation" labelWidth={LABEL_WIDTH} tooltip="None = raw data, Optimized Display = default from config, or pick a specific function">
-          <Combobox
-            options={AGGREGATION_OPTIONS}
-            value={currentAggregation}
-            onChange={(option) => {
-              const val = option.value as AggregationOption;
-              if (val === 'none') {
-                updateAndRun({ optimizeDisplay: false, aggregation: undefined });
-              } else if (val === 'auto') {
-                updateAndRun({ optimizeDisplay: true, aggregation: undefined });
-              } else {
-                updateAndRun({ optimizeDisplay: true, aggregation: val as AggregationFunction });
-              }
-            }}
-            width={24}
-          />
-        </InlineField>
-        {currentAggregation !== 'none' && rowEstimate?.timeWindowLabel && (
-          <InlineField label="Window" labelWidth={LABEL_WIDTH}>
-            <span className={styles.windowLabel}>{rowEstimate.timeWindowLabel} (auto)</span>
-          </InlineField>
-        )}
       </InlineFieldRow>
 
       {/* DataCatalog mode: asset tree + selected tags */}
@@ -286,6 +327,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
                 entries={catalogEntries}
                 displayNamePreset={query.displayNamePreset ?? 'entryName'}
                 displayNamePattern={query.displayNamePattern ?? ''}
+                assetPaths={assetTree.assetPaths}
                 onRemove={handleRemoveTag}
                 onAggregationChange={handleAggregationChange}
               />
@@ -294,59 +336,73 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         </div>
       )}
 
-      {/* Raw mode: connection/database/dataset selectors */}
+      {/* Raw mode: connection/database/dataset selectors + column picker */}
       {query.mode === 'raw' && (
-        <InlineFieldRow>
-          <InlineField label="Connection" labelWidth={LABEL_WIDTH}>
-            <Combobox
-              options={connectionOptions}
-              value={query.connectionId ?? null}
-              onChange={(option) =>
-                updateQuery({
-                  connectionId: option?.value,
-                  databaseName: undefined,
-                  datasetName: undefined,
-                })
-              }
-              placeholder="Select connection..."
-              isClearable
-              width={24}
+        <>
+          <InlineFieldRow>
+            <InlineField label="Connection" labelWidth={LABEL_WIDTH}>
+              <Combobox
+                options={connectionOptions}
+                value={query.connectionId ?? null}
+                onChange={(option) =>
+                  updateQuery({
+                    connectionId: option?.value,
+                    databaseName: undefined,
+                    datasetName: undefined,
+                    select: [],
+                  })
+                }
+                placeholder="Select connection..."
+                isClearable
+                width={24}
+              />
+            </InlineField>
+            <InlineField label="Database" labelWidth={LABEL_WIDTH}>
+              <Combobox
+                options={filteredDatabaseOptions}
+                value={query.databaseName ?? null}
+                onChange={(option) =>
+                  updateQuery({
+                    databaseName: option?.value,
+                    datasetName: undefined,
+                    select: [],
+                  })
+                }
+                placeholder="Select database..."
+                isClearable
+                disabled={!query.connectionId}
+                width={24}
+              />
+            </InlineField>
+            <InlineField label="Dataset" labelWidth={LABEL_WIDTH}>
+              <Combobox
+                options={filteredDatasetOptions}
+                value={query.datasetName ?? null}
+                onChange={(option) => updateAndRun({ datasetName: option?.value, select: [] })}
+                placeholder="Select dataset..."
+                isClearable
+                disabled={!query.databaseName}
+                width={24}
+              />
+            </InlineField>
+          </InlineFieldRow>
+
+          {schemaColumns.length > 0 && (
+            <RawColumnSelector
+              columns={schemaColumns}
+              select={query.select ?? []}
+              onToggleColumn={handleToggleRawColumn}
+              onRemove={handleRemoveRawColumn}
+              onAggregationChange={handleRawAggregationChange}
             />
-          </InlineField>
-          <InlineField label="Database" labelWidth={LABEL_WIDTH}>
-            <Combobox
-              options={filteredDatabaseOptions}
-              value={query.databaseName ?? null}
-              onChange={(option) =>
-                updateQuery({
-                  databaseName: option?.value,
-                  datasetName: undefined,
-                })
-              }
-              placeholder="Select database..."
-              isClearable
-              disabled={!query.connectionId}
-              width={24}
-            />
-          </InlineField>
-          <InlineField label="Dataset" labelWidth={LABEL_WIDTH}>
-            <Combobox
-              options={filteredDatasetOptions}
-              value={query.datasetName ?? null}
-              onChange={(option) => updateAndRun({ datasetName: option?.value })}
-              placeholder="Select dataset..."
-              isClearable
-              disabled={!query.databaseName}
-              width={24}
-            />
-          </InlineField>
-        </InlineFieldRow>
+          )}
+        </>
       )}
 
       {/* Safety banner */}
       <SafetyBanner
         estimate={rowEstimate}
-        optimizeDisplay={query.optimizeDisplay ?? true}
+        optimizeDisplay={optimizeDisplay}
         maxRawRows={maxRawRows}
       />
 
@@ -355,6 +411,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         query={query}
         onUpdate={updateQuery}
         onUpdateAndRun={updateAndRun}
+        isMultiDataset={isMultiDataset}
       />
 
       {/* Display name configuration (collapsible) */}
@@ -367,25 +424,14 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
           preset={query.displayNamePreset ?? 'entryName'}
           pattern={query.displayNamePattern ?? ''}
           entries={catalogEntries}
-          onPresetChange={(preset) => updateQuery({ displayNamePreset: preset })}
-          onPatternChange={(pattern) => updateQuery({ displayNamePattern: pattern })}
+          onPresetChange={(preset) => updateAndRun({ displayNamePreset: preset })}
+          onPatternChange={(pattern) => updateAndRun({ displayNamePattern: pattern })}
         />
       </Collapse>
     </div>
   );
 }
 
-function defaultAggregationForLabel(labels: Array<{ name: string }>): AggregationFunction {
-  if (labels.length === 0) {
-    return 'avg';
-  }
-  switch (labels[0].name.toLowerCase()) {
-    case 'analog': return 'avg';
-    case 'digital': return 'last';
-    case 'counter': return 'max';
-    default: return 'avg';
-  }
-}
 
 function displaySummary(preset: DisplayNamePreset): string {
   switch (preset) {
@@ -420,12 +466,6 @@ function getStyles(theme: GrafanaTheme2) {
     selectedPanel: css({
       flex: 1,
       minWidth: 0,
-    }),
-    windowLabel: css({
-      fontSize: theme.typography.bodySmall.fontSize,
-      color: theme.colors.text.secondary,
-      padding: '6px 0',
-      display: 'inline-block',
     }),
   };
 }

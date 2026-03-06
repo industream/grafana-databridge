@@ -182,6 +182,27 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     setExpandedNodeIds(new Set());
   };
 
+  // Build entryId -> asset path map from loaded trees
+  const assetPaths = useMemo(() => {
+    const paths: Record<string, string> = {};
+    const walk = (nodes: AssetNode[], ancestors: string[]) => {
+      for (const node of nodes) {
+        const currentPath = [...ancestors, node.name];
+        const pathStr = currentPath.join(' > ');
+        for (const entryId of node.entryIds ?? []) {
+          paths[entryId] = pathStr;
+        }
+        if (node.children) {
+          walk(node.children, currentPath);
+        }
+      }
+    };
+    for (const tree of trees) {
+      walk(tree.nodes, []);
+    }
+    return paths;
+  }, [trees]);
+
   return {
     trees,
     labels,
@@ -197,5 +218,6 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     labelFilter,
     setLabelFilter,
     filteredEntries,
+    assetPaths,
   };
 }
