@@ -169,20 +169,76 @@ func TestBuildTimeRangeWhere(t *testing.T) {
 	}
 }
 
-func TestBuildTimeRangeWhere_WithUserConditions(t *testing.T) {
+func TestBuildTimeRangeWhere_WithUserFilter(t *testing.T) {
 	now := time.Now()
 	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
 
-	userConditions := []models.WhereCondition{
-		{Column: "temperature", Operator: "gt", Value: 25.0},
+	userFilter := &models.FilterDefinition{
+		Operator: "and",
+		Conditions: []models.FilterDefinition{
+			{Column: "temperature", Operator: "gt", Value: 25.0},
+			{Column: "humidity", Operator: "lt", Value: 80.0},
+		},
 	}
 
-	where := buildTimeRangeWhere(tr, userConditions)
+	where := buildTimeRangeWhere(tr, userFilter)
+
+	// 2 time conditions + 1 user group = 3
+	if len(where.Conditions) != 3 {
+		t.Fatalf("expected 3 conditions (2 time + 1 user group), got %d", len(where.Conditions))
+	}
+	// The user group should be an AND with 2 sub-conditions
+	userGroup := where.Conditions[2]
+	if userGroup.Operator != "and" {
+		t.Errorf("expected 'and' for user group, got %s", userGroup.Operator)
+	}
+	if len(userGroup.Conditions) != 2 {
+		t.Fatalf("expected 2 sub-conditions, got %d", len(userGroup.Conditions))
+	}
+	if userGroup.Conditions[0].Operator != "greater" {
+		t.Errorf("expected 'greater', got %s", userGroup.Conditions[0].Operator)
+	}
+}
+
+func TestBuildTimeRangeWhere_WithNestedOrFilter(t *testing.T) {
+	now := time.Now()
+	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
+
+	userFilter := &models.FilterDefinition{
+		Operator: "or",
+		Conditions: []models.FilterDefinition{
+			{Column: "temperature", Operator: "gt", Value: 30.0},
+			{Column: "pressure", Operator: "lt", Value: 1000.0},
+		},
+	}
+
+	where := buildTimeRangeWhere(tr, userFilter)
 
 	if len(where.Conditions) != 3 {
-		t.Fatalf("expected 3 conditions (2 time + 1 user), got %d", len(where.Conditions))
+		t.Fatalf("expected 3, got %d", len(where.Conditions))
+	}
+	orGroup := where.Conditions[2]
+	if orGroup.Operator != "or" {
+		t.Errorf("expected 'or', got %s", orGroup.Operator)
+	}
+}
+
+func TestBuildTimeRangeWhere_SingleCondition(t *testing.T) {
+	now := time.Now()
+	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
+
+	userFilter := &models.FilterDefinition{
+		Column:   "temperature",
+		Operator: "gt",
+		Value:    25.0,
+	}
+
+	where := buildTimeRangeWhere(tr, userFilter)
+
+	if len(where.Conditions) != 3 {
+		t.Fatalf("expected 3, got %d", len(where.Conditions))
 	}
 	if where.Conditions[2].Operator != "greater" {
-		t.Errorf("expected 'greater' for user condition, got %s", where.Conditions[2].Operator)
+		t.Errorf("expected 'greater', got %s", where.Conditions[2].Operator)
 	}
 }

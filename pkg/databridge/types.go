@@ -24,7 +24,7 @@ type ColumnInfo struct {
 // RecordsQuery is the request body for POST /records/query.
 type RecordsQuery struct {
 	Select  []SelectClause `json:"select,omitempty"`
-	Where   interface{}    `json:"where,omitempty"`
+	Where   *WhereExpression `json:"where,omitempty"`
 	GroupBy []GroupClause  `json:"groupBy,omitempty"`
 	OrderBy []OrderClause  `json:"orderBy,omitempty"`
 	Limit   int            `json:"limit,omitempty"`
@@ -60,18 +60,12 @@ type OrderClause struct {
 }
 
 // WhereExpression is a boolean expression tree for the WHERE clause.
+// It can be a logical group (and/or with sub-conditions) or a leaf comparison.
 type WhereExpression struct {
-	Operator   string             `json:"operator"`
-	Conditions []WhereCondition   `json:"conditions,omitempty"`
-	Left       *WhereOperand      `json:"left,omitempty"`
-	Right      *WhereOperand      `json:"right,omitempty"`
-}
-
-// WhereCondition is a single condition in a boolean expression.
-type WhereCondition struct {
-	Operator string        `json:"operator"`
-	Left     *WhereOperand `json:"left"`
-	Right    *WhereOperand `json:"right"`
+	Operator   string              `json:"operator"`
+	Conditions []WhereExpression   `json:"conditions,omitempty"`
+	Left       *WhereOperand       `json:"left,omitempty"`
+	Right      *WhereOperand       `json:"right,omitempty"`
 }
 
 // WhereOperand is either a column reference or a constant value.

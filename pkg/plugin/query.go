@@ -238,9 +238,9 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	return rq
 }
 
-// buildTimeRangeWhere creates a WHERE expression for the time range.
-func buildTimeRangeWhere(timeRange backend.TimeRange, userConditions []models.WhereCondition) *databridge.WhereExpression {
-	conditions := []databridge.WhereCondition{
+// buildTimeRangeWhere creates a WHERE expression combining the time range with user filters.
+func buildTimeRangeWhere(timeRange backend.TimeRange, userFilter *models.FilterDefinition) *databridge.WhereExpression {
+	timeConditions := []databridge.WhereExpression{
 		{
 			Operator: "greaterOrEqual",
 			Left:     &databridge.WhereOperand{Column: "time"},
@@ -253,17 +253,34 @@ func buildTimeRangeWhere(timeRange backend.TimeRange, userConditions []models.Wh
 		},
 	}
 
-	for _, uc := range userConditions {
-		conditions = append(conditions, databridge.WhereCondition{
-			Operator: mapOperator(uc.Operator),
-			Left:     &databridge.WhereOperand{Column: uc.Column},
-			Right:    &databridge.WhereOperand{Constant: uc.Value},
-		})
+	if userFilter != nil {
+		converted := convertFilter(userFilter)
+		timeConditions = append(timeConditions, *converted)
 	}
 
 	return &databridge.WhereExpression{
 		Operator:   "and",
-		Conditions: conditions,
+		Conditions: timeConditions,
+	}
+}
+
+// convertFilter recursively converts a FilterDefinition tree to a DataBridge WhereExpression.
+func convertFilter(f *models.FilterDefinition) *databridge.WhereExpression {
+	if f.IsLogicalGroup() {
+		conditions := make([]databridge.WhereExpression, 0, len(f.Conditions))
+		for i := range f.Conditions {
+			conditions = append(conditions, *convertFilter(&f.Conditions[i]))
+		}
+		return &databridge.WhereExpression{
+			Operator:   f.Operator,
+			Conditions: conditions,
+		}
+	}
+
+	return &databridge.WhereExpression{
+		Operator: mapOperator(f.Operator),
+		Left:     &databridge.WhereOperand{Column: f.Column},
+		Right:    &databridge.WhereOperand{Constant: f.Value},
 	}
 }
 

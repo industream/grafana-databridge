@@ -97,7 +97,7 @@ func (d *Datasource) fetchLatestFrame(ctx context.Context, client *databridge.Cl
 	rq := &databridge.RecordsQuery{
 		Where: &databridge.WhereExpression{
 			Operator: "and",
-			Conditions: []databridge.WhereCondition{
+			Conditions: []databridge.WhereExpression{
 				{
 					Operator: "greaterOrEqual",
 					Left:     &databridge.WhereOperand{Column: "time"},

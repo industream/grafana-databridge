@@ -38,10 +38,28 @@ export interface SelectDefinition {
   displayNamePattern?: string;
 }
 
-export interface WhereCondition {
+export type ComparisonOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'notIn';
+export type LogicalOperator = 'and' | 'or';
+
+/**
+ * Recursive filter tree: either a logical group (AND/OR with sub-conditions)
+ * or a leaf comparison (column op value).
+ */
+export type FilterDefinition = FilterGroup | FilterCondition;
+
+export interface FilterGroup {
+  operator: LogicalOperator;
+  conditions: FilterDefinition[];
+}
+
+export interface FilterCondition {
   column: string;
-  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'notIn';
+  operator: ComparisonOperator;
   value: string | number | boolean;
+}
+
+export function isFilterGroup(f: FilterDefinition): f is FilterGroup {
+  return 'conditions' in f && Array.isArray((f as FilterGroup).conditions);
 }
 
 export interface DataBridgeQuery extends DataQuery {
@@ -61,7 +79,7 @@ export interface DataBridgeQuery extends DataQuery {
   select: SelectDefinition[];
 
   // WHERE
-  where?: WhereCondition[];
+  where?: FilterDefinition;
 
   // Aggregation / time window
   aggregation?: AggregationFunction;

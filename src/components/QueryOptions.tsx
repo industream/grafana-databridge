@@ -1,9 +1,17 @@
 import React, { ChangeEvent, useState } from 'react';
 import { css } from '@emotion/css';
-import { Collapse, Combobox, InlineField, InlineFieldRow, Input, useStyles2 } from '@grafana/ui';
+import { Collapse, Combobox, InlineField, InlineFieldRow, Input, RadioButtonGroup, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { DataBridgeQuery, WhereCondition } from '../types';
+import {
+  DataBridgeQuery,
+  FilterDefinition,
+  FilterGroup,
+  FilterCondition,
+  ComparisonOperator,
+  LogicalOperator,
+  isFilterGroup,
+} from '../types';
 
 interface QueryOptionsProps {
   query: DataBridgeQuery;
@@ -18,6 +26,16 @@ const ORDER_DIRECTION_OPTIONS = [
 
 const LABEL_WIDTH = 14;
 
+function countConditions(filter?: FilterDefinition): number {
+  if (!filter) {
+    return 0;
+  }
+  if (isFilterGroup(filter)) {
+    return filter.conditions.reduce((acc, c) => acc + countConditions(c), 0);
+  }
+  return 1;
+}
+
 export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsProps) {
   const styles = useStyles2(getStyles);
 
@@ -25,9 +43,8 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsPr
   const [isOrderOpen, setIsOrderOpen] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
-  const filterSummary = (query.where?.length ?? 0) > 0
-    ? `${query.where!.length} filter(s)`
-    : '(none)';
+  const filterCount = countConditions(query.where);
+  const filterSummary = filterCount > 0 ? `${filterCount} filter(s)` : '(none)';
 
   const orderSummary = query.orderByColumn
     ? `${query.orderByColumn} ${query.orderByDirection ?? 'asc'}`
@@ -48,8 +65,9 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsPr
         isOpen={isFiltersOpen}
         onToggle={() => setIsFiltersOpen(!isFiltersOpen)}
       >
-        <FilterEditor
-          conditions={query.where ?? []}
+        <FilterGroupEditor
+          group={ensureGroup(query.where)}
+          isRoot
           onChange={(where) => onUpdate({ where })}
           onRunQuery={() => onUpdateAndRun({})}
         />
@@ -120,12 +138,16 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsPr
   );
 }
 
-// --- Inline filter editor ---
+// --- Nested filter editor ---
 
-interface FilterEditorProps {
-  conditions: WhereCondition[];
-  onChange: (conditions: WhereCondition[]) => void;
-  onRunQuery: () => void;
+function ensureGroup(filter?: FilterDefinition): FilterGroup {
+  if (!filter) {
+    return { operator: 'and', conditions: [] };
+  }
+  if (isFilterGroup(filter)) {
+    return filter;
+  }
+  return { operator: 'and', conditions: [filter] };
 }
 
 const OPERATOR_OPTIONS = [
@@ -137,69 +159,143 @@ const OPERATOR_OPTIONS = [
   { label: '<=', value: 'lte' as const },
 ];
 
-function FilterEditor({ conditions, onChange, onRunQuery }: FilterEditorProps) {
+const COMBINATOR_OPTIONS = [
+  { label: 'AND', value: 'and' as const },
+  { label: 'OR', value: 'or' as const },
+];
+
+interface FilterGroupEditorProps {
+  group: FilterGroup;
+  isRoot?: boolean;
+  onChange: (group: FilterGroup) => void;
+  onRunQuery: () => void;
+  onRemove?: () => void;
+}
+
+function FilterGroupEditor({ group, isRoot, onChange, onRunQuery, onRemove }: FilterGroupEditorProps) {
   const styles = useStyles2(getStyles);
 
-  const addCondition = () => {
-    onChange([...conditions, { column: '', operator: 'eq', value: '' }]);
+  const updateOperator = (op: LogicalOperator) => {
+    onChange({ ...group, operator: op });
   };
 
-  const updateCondition = (index: number, patch: Partial<WhereCondition>) => {
-    const next = [...conditions];
-    next[index] = { ...next[index], ...patch };
-    onChange(next);
+  const updateCondition = (index: number, updated: FilterDefinition) => {
+    const next = [...group.conditions];
+    next[index] = updated;
+    onChange({ ...group, conditions: next });
   };
 
   const removeCondition = (index: number) => {
-    const next = [...conditions];
+    const next = [...group.conditions];
     next.splice(index, 1);
-    onChange(next);
+    onChange({ ...group, conditions: next });
     onRunQuery();
   };
 
+  const addCondition = () => {
+    onChange({
+      ...group,
+      conditions: [...group.conditions, { column: '', operator: 'eq' as ComparisonOperator, value: '' }],
+    });
+  };
+
+  const addGroup = () => {
+    const newGroup: FilterGroup = { operator: group.operator === 'and' ? 'or' : 'and', conditions: [] };
+    onChange({ ...group, conditions: [...group.conditions, newGroup] });
+  };
+
   return (
-    <div className={styles.filterContainer}>
-      {conditions.map((condition, index) => (
-        <InlineFieldRow key={index}>
-          <InlineField label="Column" labelWidth={10}>
-            <Input
-              value={condition.column}
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                updateCondition(index, { column: e.target.value })
-              }
-              placeholder="column name"
-              width={16}
-            />
-          </InlineField>
-          <InlineField label="Op" labelWidth={6}>
-            <Combobox
-              options={OPERATOR_OPTIONS}
-              value={condition.operator}
-              onChange={(option) => updateCondition(index, { operator: option.value as WhereCondition['operator'] })}
-              width={10}
-            />
-          </InlineField>
-          <InlineField label="Value" labelWidth={8}>
-            <Input
-              value={String(condition.value)}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                const v = e.target.value;
-                const num = Number(v);
-                updateCondition(index, { value: isNaN(num) ? v : num });
-              }}
-              placeholder="value"
-              width={16}
-            />
-          </InlineField>
-          <button className={styles.removeButton} onClick={() => removeCondition(index)} type="button">
+    <div className={isRoot ? styles.filterContainer : styles.nestedGroup}>
+      <div className={styles.groupHeader}>
+        <RadioButtonGroup
+          options={COMBINATOR_OPTIONS}
+          value={group.operator}
+          onChange={(v) => updateOperator(v as LogicalOperator)}
+          size="sm"
+        />
+        {!isRoot && onRemove && (
+          <button className={styles.removeButton} onClick={onRemove} type="button" title="Remove group">
             &times;
           </button>
-        </InlineFieldRow>
+        )}
+      </div>
+
+      {group.conditions.map((condition, index) => (
+        <div key={index} className={styles.conditionRow}>
+          {isFilterGroup(condition) ? (
+            <FilterGroupEditor
+              group={condition}
+              onChange={(updated) => updateCondition(index, updated)}
+              onRunQuery={onRunQuery}
+              onRemove={() => removeCondition(index)}
+            />
+          ) : (
+            <ConditionEditor
+              condition={condition}
+              onChange={(updated) => updateCondition(index, updated)}
+              onRemove={() => removeCondition(index)}
+            />
+          )}
+        </div>
       ))}
-      <button className={styles.addButton} onClick={addCondition} type="button">
-        + Add filter
-      </button>
+
+      <div className={styles.buttonRow}>
+        <button className={styles.addButton} onClick={addCondition} type="button">
+          + Condition
+        </button>
+        <button className={styles.addButton} onClick={addGroup} type="button">
+          + Group
+        </button>
+      </div>
     </div>
+  );
+}
+
+interface ConditionEditorProps {
+  condition: FilterCondition;
+  onChange: (condition: FilterCondition) => void;
+  onRemove: () => void;
+}
+
+function ConditionEditor({ condition, onChange, onRemove }: ConditionEditorProps) {
+  const styles = useStyles2(getStyles);
+
+  return (
+    <InlineFieldRow>
+      <InlineField label="Column" labelWidth={10}>
+        <Input
+          value={condition.column}
+          onChange={(e: ChangeEvent<HTMLInputElement>) =>
+            onChange({ ...condition, column: e.target.value })
+          }
+          placeholder="column name"
+          width={16}
+        />
+      </InlineField>
+      <InlineField label="Op" labelWidth={6}>
+        <Combobox
+          options={OPERATOR_OPTIONS}
+          value={condition.operator}
+          onChange={(option) => onChange({ ...condition, operator: option.value as ComparisonOperator })}
+          width={10}
+        />
+      </InlineField>
+      <InlineField label="Value" labelWidth={8}>
+        <Input
+          value={String(condition.value)}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+            const v = e.target.value;
+            const num = Number(v);
+            onChange({ ...condition, value: isNaN(num) ? v : num });
+          }}
+          placeholder="value"
+          width={16}
+        />
+      </InlineField>
+      <button className={styles.removeButton} onClick={onRemove} type="button">
+        &times;
+      </button>
+    </InlineFieldRow>
   );
 }
 
@@ -213,8 +309,30 @@ function getStyles(theme: GrafanaTheme2) {
     filterContainer: css({
       display: 'flex',
       flexDirection: 'column',
-      gap: theme.spacing(0.25),
+      gap: theme.spacing(0.5),
       padding: `${theme.spacing(0.5)} 0`,
+    }),
+    nestedGroup: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(0.5),
+      padding: theme.spacing(1),
+      borderLeft: `2px solid ${theme.colors.primary.border}`,
+      borderRadius: theme.shape.radius.default,
+      background: theme.colors.background.secondary,
+    }),
+    groupHeader: css({
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing(1),
+    }),
+    conditionRow: css({
+      display: 'flex',
+      flexDirection: 'column',
+    }),
+    buttonRow: css({
+      display: 'flex',
+      gap: theme.spacing(0.5),
     }),
     removeButton: css({
       background: 'none',
@@ -236,7 +354,6 @@ function getStyles(theme: GrafanaTheme2) {
       color: theme.colors.text.secondary,
       fontSize: theme.typography.bodySmall.fontSize,
       padding: `${theme.spacing(0.5)} ${theme.spacing(1)}`,
-      alignSelf: 'flex-start',
       '&:hover': {
         color: theme.colors.text.primary,
         borderColor: theme.colors.border.medium,
