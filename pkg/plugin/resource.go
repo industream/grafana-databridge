@@ -170,6 +170,8 @@ func (d *Datasource) handleGetNodeEntries(w http.ResponseWriter, r *http.Request
 }
 
 // ensureAssetTreeCached loads and caches the asset tree if not already cached.
+// When sourceConnectionId is configured, entry IDs are filtered to only include
+// entries from the matching connection, and entryCount is updated accordingly.
 func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 	if _, ok := d.assetCache.Get("all"); ok {
 		return
@@ -179,6 +181,21 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 		d.logger.Warn("Failed to load asset dictionaries for cache", "error", err)
 		return
 	}
+
+	// Build a set of valid entry IDs when sourceConnectionId is configured.
+	var validEntryIds map[string]bool
+	if d.settings.SourceConnectionId != "" {
+		entries, err := d.catalogClient.ListEntries(ctx, "", "")
+		if err == nil {
+			validEntryIds = make(map[string]bool)
+			for _, e := range entries {
+				if e.GetSourceConnectionID() == d.settings.SourceConnectionId {
+					validEntryIds[e.ID] = true
+				}
+			}
+		}
+	}
+
 	for i := range trees {
 		flatNodes, err := d.catalogClient.ListAssetNodes(ctx, trees[i].ID)
 		if err != nil {
@@ -186,8 +203,28 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 			continue
 		}
 		trees[i].Nodes = buildNodeTree(flatNodes)
+		if validEntryIds != nil {
+			filterTreeEntryIds(trees[i].Nodes, validEntryIds)
+		}
 	}
 	d.assetCache.Set("all", trees)
+}
+
+// filterTreeEntryIds removes entry IDs that are not in validIds and updates entryCount.
+func filterTreeEntryIds(nodes []datacatalog.AssetNode, validIds map[string]bool) {
+	for i := range nodes {
+		filtered := make([]string, 0)
+		for _, id := range nodes[i].EntryIds {
+			if validIds[id] {
+				filtered = append(filtered, id)
+			}
+		}
+		nodes[i].EntryIds = filtered
+		nodes[i].EntryCount = len(filtered)
+		if len(nodes[i].Children) > 0 {
+			filterTreeEntryIds(nodes[i].Children, validIds)
+		}
+	}
 }
 
 // buildNodeTree converts a flat list of nodes with parentId into a nested tree.
