@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	_ backend.QueryDataHandler    = (*Datasource)(nil)
-	_ backend.CheckHealthHandler  = (*Datasource)(nil)
-	_ backend.CallResourceHandler = (*Datasource)(nil)
+	_ backend.QueryDataHandler      = (*Datasource)(nil)
+	_ backend.CheckHealthHandler    = (*Datasource)(nil)
+	_ backend.CallResourceHandler   = (*Datasource)(nil)
+	_ backend.StreamHandler         = (*Datasource)(nil)
 	_ instancemgmt.InstanceDisposer = (*Datasource)(nil)
 )
 
@@ -73,17 +74,10 @@ func (d *Datasource) dataBridgeClient(url string) *databridge.Client {
 	return databridge.NewClient(url)
 }
 
-// resolveConnectionUrl looks up a source connection by ID and returns its URL.
-func (d *Datasource) resolveConnectionUrl(ctx context.Context, connectionId string) (string, error) {
-	connections, err := d.getConnections(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, c := range connections {
-		if c.ID == connectionId {
-			return c.URL, nil
-		}
-	}
+// resolveConnectionUrl returns the DataBridge URL to use for queries.
+// Always uses the configured DataBridgeApiUrl since each datasource instance
+// is already configured to point to the correct backend provider.
+func (d *Datasource) resolveConnectionUrl(_ context.Context, _ string) (string, error) {
 	return d.settings.DataBridgeApiUrl, nil
 }
 

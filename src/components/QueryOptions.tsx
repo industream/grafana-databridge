@@ -3,24 +3,13 @@ import { css } from '@emotion/css';
 import { Collapse, Combobox, InlineField, InlineFieldRow, Input, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { AggregationFunction, DataBridgeQuery, WhereCondition } from '../types';
+import { DataBridgeQuery, WhereCondition } from '../types';
 
 interface QueryOptionsProps {
   query: DataBridgeQuery;
-  timeWindowLabel: string | undefined;
   onUpdate: (patch: Partial<DataBridgeQuery>) => void;
   onUpdateAndRun: (patch: Partial<DataBridgeQuery>) => void;
 }
-
-const AGGREGATION_OPTIONS = [
-  { label: 'Average', value: 'avg' as const },
-  { label: 'Minimum', value: 'min' as const },
-  { label: 'Maximum', value: 'max' as const },
-  { label: 'Sum', value: 'sum' as const },
-  { label: 'Count', value: 'count' as const },
-  { label: 'First', value: 'first' as const },
-  { label: 'Last', value: 'last' as const },
-];
 
 const ORDER_DIRECTION_OPTIONS = [
   { label: 'ASC', value: 'asc' as const },
@@ -29,7 +18,7 @@ const ORDER_DIRECTION_OPTIONS = [
 
 const LABEL_WIDTH = 14;
 
-export function QueryOptions({ query, timeWindowLabel, onUpdate, onUpdateAndRun }: QueryOptionsProps) {
+export function QueryOptions({ query, onUpdate, onUpdateAndRun }: QueryOptionsProps) {
   const styles = useStyles2(getStyles);
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -53,23 +42,6 @@ export function QueryOptions({ query, timeWindowLabel, onUpdate, onUpdateAndRun 
 
   return (
     <div className={styles.container}>
-      {/* Aggregation + computed window */}
-      <InlineFieldRow>
-        <InlineField label="Aggregation" labelWidth={LABEL_WIDTH}>
-          <Combobox
-            options={AGGREGATION_OPTIONS}
-            value={query.aggregation ?? 'avg'}
-            onChange={(option) => onUpdateAndRun({ aggregation: option.value as AggregationFunction })}
-            width={20}
-          />
-        </InlineField>
-        {query.optimizeDisplay && timeWindowLabel && (
-          <InlineField label="Window" labelWidth={LABEL_WIDTH}>
-            <span className={styles.windowLabel}>{timeWindowLabel} (auto)</span>
-          </InlineField>
-        )}
-      </InlineFieldRow>
-
       {/* Filters (WHERE) — collapsible */}
       <Collapse
         label={`Filters (WHERE): ${filterSummary}`}
@@ -237,12 +209,6 @@ function getStyles(theme: GrafanaTheme2) {
       display: 'flex',
       flexDirection: 'column',
       gap: theme.spacing(0.25),
-    }),
-    windowLabel: css({
-      fontSize: theme.typography.bodySmall.fontSize,
-      color: theme.colors.text.secondary,
-      padding: `6px 0`,
-      display: 'inline-block',
     }),
     filterContainer: css({
       display: 'flex',

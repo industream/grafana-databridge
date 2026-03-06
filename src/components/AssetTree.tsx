@@ -100,7 +100,6 @@ export function AssetTree({
             selectedEntryIds={selectedEntryIds}
             onToggleNode={onToggleNode}
             onSelectEntry={onSelectEntry}
-            filteredEntries={filteredEntries}
           />
         )}
       </div>
@@ -115,33 +114,51 @@ interface TreeNodesProps {
   selectedEntryIds: Set<string>;
   onToggleNode: (nodeId: string) => void;
   onSelectEntry: (entry: CatalogEntry) => void;
-  filteredEntries: CatalogEntry[];
 }
 
-function TreeNodes({ flatNodes, selectedEntryIds, onToggleNode, onSelectEntry, filteredEntries }: TreeNodesProps) {
+function TreeNodes({ flatNodes, selectedEntryIds, onToggleNode, onSelectEntry }: TreeNodesProps) {
   const styles = useStyles2(getStyles);
 
   if (flatNodes.length === 0) {
     return <div className={styles.emptyState}>No asset dictionaries configured</div>;
   }
 
-  // Build a map of nodeId -> entries for leaf rendering
-  // For now, entries are matched by being in filteredEntries
-  // TODO: Phase 2 enhancement — load entries per node from backend
-
   return (
     <>
       {flatNodes.map((node) => (
-        <div key={node.id} className={styles.treeNode} style={{ paddingLeft: `${node.depth * 20 + 4}px` }}>
-          <button className={styles.nodeToggle} onClick={() => onToggleNode(node.id)} type="button">
-            <Icon name={node.isExpanded ? 'angle-down' : 'angle-right'} size="sm" />
+        <React.Fragment key={node.id}>
+          <button
+            className={styles.treeNode}
+            style={{ paddingLeft: `${node.depth * 20 + 4}px` }}
+            onClick={() => onToggleNode(node.id)}
+            type="button"
+          >
+            {node.hasChildren ? (
+              <Icon name={node.isExpanded ? 'angle-down' : 'angle-right'} size="sm" />
+            ) : (
+              <span style={{ width: 20 }} />
+            )}
+            <Icon name={node.entryCount > 0 ? 'folder-open' : 'folder'} size="sm" className={styles.nodeIcon} />
+            <span className={styles.nodeName}>{node.name}</span>
+            {node.entryCount > 0 && (
+              <Badge text={String(node.entryCount)} color="blue" className={styles.countBadge} />
+            )}
           </button>
-          <Icon name="folder" size="sm" className={styles.nodeIcon} />
-          <span className={styles.nodeName}>{node.name}</span>
-          {node.entryCount > 0 && (
-            <Badge text={String(node.entryCount)} color="blue" className={styles.countBadge} />
+          {node.isExpanded && node.isLoading && (
+            <div style={{ paddingLeft: `${(node.depth + 1) * 20 + 4}px`, padding: '4px' }}>
+              <Spinner size="sm" inline /> Loading entries...
+            </div>
           )}
-        </div>
+          {node.isExpanded && !node.isLoading && node.entries.length > 0 && node.entries.map((entry) => (
+            <div key={entry.id} style={{ paddingLeft: `${(node.depth + 1) * 20 + 4}px` }}>
+              <EntryRow
+                entry={entry}
+                isSelected={selectedEntryIds.has(entry.id)}
+                onSelect={onSelectEntry}
+              />
+            </div>
+          ))}
+        </React.Fragment>
       ))}
     </>
   );
@@ -198,7 +215,7 @@ function EntryRow({ entry, isSelected, onSelect }: EntryRowProps) {
       <span className={styles.entryName}>{entry.name}</span>
       {entry.metadata?.tagLevel1 && <span className={styles.entryTag}>{entry.metadata.tagLevel1}</span>}
       {entry.labels.length > 0 && (
-        <Badge text={entry.labels[0]} color={labelColor(entry.labels[0])} className={styles.entryLabel} />
+        <Badge text={entry.labels[0].name} color={labelColor(entry.labels[0].name)} className={styles.entryLabel} />
       )}
     </button>
   );
@@ -250,17 +267,14 @@ function getStyles(theme: GrafanaTheme2) {
       gap: theme.spacing(0.5),
       padding: `${theme.spacing(0.25)} 0`,
       minHeight: '28px',
-    }),
-    nodeToggle: css({
+      width: '100%',
       background: 'none',
       border: 'none',
       cursor: 'pointer',
-      padding: '2px',
-      display: 'flex',
-      alignItems: 'center',
-      color: theme.colors.text.secondary,
+      textAlign: 'left',
+      borderRadius: theme.shape.radius.default,
       '&:hover': {
-        color: theme.colors.text.primary,
+        backgroundColor: theme.colors.action.hover,
       },
     }),
     nodeIcon: css({

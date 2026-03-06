@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
-import { Combobox, Collapse, InlineField, InlineFieldRow, RadioButtonGroup, Switch, useStyles2 } from '@grafana/ui';
+import { Combobox, Collapse, InlineField, InlineFieldRow, RadioButtonGroup, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2, QueryEditorProps, SelectableValue } from '@grafana/data';
 
 import { DataSource } from '../datasource';
@@ -16,6 +16,7 @@ import {
   SelectDefinition,
   SourceConnection,
   AggregationFunction,
+  AggregationOrNone,
 } from '../types';
 import { useAssetTree } from '../hooks/useAssetTree';
 import { useRowEstimate } from '../hooks/useRowEstimate';
@@ -35,6 +36,20 @@ const MODE_OPTIONS: Array<SelectableValue<QueryMode>> = [
 const STRATEGY_OPTIONS: Array<SelectableValue<QueryStrategy>> = [
   { label: 'Time Series', value: 'timeseries' },
   { label: 'Table', value: 'table' },
+];
+
+type AggregationOption = AggregationOrNone | 'auto';
+
+const AGGREGATION_OPTIONS: Array<{ label: string; value: AggregationOption }> = [
+  { label: 'None (raw data)', value: 'none' },
+  { label: 'Optimized Display', value: 'auto' },
+  { label: 'Average', value: 'avg' },
+  { label: 'Minimum', value: 'min' },
+  { label: 'Maximum', value: 'max' },
+  { label: 'Sum', value: 'sum' },
+  { label: 'Count', value: 'count' },
+  { label: 'First', value: 'first' },
+  { label: 'Last', value: 'last' },
 ];
 
 const LABEL_WIDTH = 16;
@@ -84,6 +99,14 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     },
     [onChange, onRunQuery, query]
   );
+
+  // Derive aggregation display value for the dropdown
+  const defaultAgg = datasource.settings.defaultAggregation ?? 'avg';
+  const currentAggregation: AggregationOption = !(query.optimizeDisplay ?? true)
+    ? 'none'
+    : query.aggregation
+      ? query.aggregation
+      : 'auto';
 
   // --- Raw mode data loading ---
 
@@ -195,7 +218,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
 
   return (
     <div className={styles.container}>
-      {/* Mode & Strategy row */}
+      {/* Mode, Strategy & Aggregation row */}
       <InlineFieldRow>
         <InlineField label="Mode" labelWidth={LABEL_WIDTH}>
           <RadioButtonGroup
@@ -211,12 +234,28 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
             onChange={(value) => updateAndRun({ strategy: value })}
           />
         </InlineField>
-        <InlineField label="Optimize Display" labelWidth={LABEL_WIDTH}>
-          <Switch
-            value={query.optimizeDisplay ?? true}
-            onChange={(event) => updateAndRun({ optimizeDisplay: event.currentTarget.checked })}
+        <InlineField label="Aggregation" labelWidth={LABEL_WIDTH} tooltip="None = raw data, Optimized Display = default from config, or pick a specific function">
+          <Combobox
+            options={AGGREGATION_OPTIONS}
+            value={currentAggregation}
+            onChange={(option) => {
+              const val = option.value as AggregationOption;
+              if (val === 'none') {
+                updateAndRun({ optimizeDisplay: false, aggregation: undefined });
+              } else if (val === 'auto') {
+                updateAndRun({ optimizeDisplay: true, aggregation: undefined });
+              } else {
+                updateAndRun({ optimizeDisplay: true, aggregation: val as AggregationFunction });
+              }
+            }}
+            width={24}
           />
         </InlineField>
+        {currentAggregation !== 'none' && rowEstimate?.timeWindowLabel && (
+          <InlineField label="Window" labelWidth={LABEL_WIDTH}>
+            <span className={styles.windowLabel}>{rowEstimate.timeWindowLabel} (auto)</span>
+          </InlineField>
+        )}
       </InlineFieldRow>
 
       {/* DataCatalog mode: asset tree + selected tags */}
@@ -314,7 +353,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
       {/* Query options: aggregation, filters, order, advanced */}
       <QueryOptions
         query={query}
-        timeWindowLabel={rowEstimate?.timeWindowLabel}
         onUpdate={updateQuery}
         onUpdateAndRun={updateAndRun}
       />
@@ -337,11 +375,11 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
   );
 }
 
-function defaultAggregationForLabel(labels: string[]): AggregationFunction {
+function defaultAggregationForLabel(labels: Array<{ name: string }>): AggregationFunction {
   if (labels.length === 0) {
     return 'avg';
   }
-  switch (labels[0].toLowerCase()) {
+  switch (labels[0].name.toLowerCase()) {
     case 'analog': return 'avg';
     case 'digital': return 'last';
     case 'counter': return 'max';
@@ -382,6 +420,12 @@ function getStyles(theme: GrafanaTheme2) {
     selectedPanel: css({
       flex: 1,
       minWidth: 0,
+    }),
+    windowLabel: css({
+      fontSize: theme.typography.bodySmall.fontSize,
+      color: theme.colors.text.secondary,
+      padding: '6px 0',
+      display: 'inline-block',
     }),
   };
 }

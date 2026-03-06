@@ -2,21 +2,46 @@ package datacatalog
 
 // SourceConnection represents a DataCatalog source connection.
 type SourceConnection struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	SourceTypeID string `json:"sourceTypeId"`
-	URL          string `json:"url"`
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	SourceTypeID string      `json:"sourceTypeId,omitempty"`
+	SourceType   *SourceType `json:"sourceType,omitempty"`
+	URL          string      `json:"url"`
+}
+
+// SourceType represents a source type (e.g. DataBridge, InfluxDB).
+type SourceType struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // CatalogEntry represents a catalog entry from the DataCatalog API.
 type CatalogEntry struct {
-	ID                 string              `json:"id"`
-	Name               string              `json:"name"`
-	SourceConnectionID string              `json:"sourceConnectionId"`
-	DataType           string              `json:"dataType"`
-	Labels             []string            `json:"labels"`
-	Metadata           *CatalogMetadata    `json:"metadata"`
-	SourceParams       map[string]string   `json:"sourceParams"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	SourceConnection *SourceConnection `json:"sourceConnection,omitempty"`
+	SourceConnectionID string          `json:"sourceConnectionId,omitempty"`
+	DataType         string            `json:"dataType"`
+	Labels           []Label           `json:"labels"`
+	Metadata         *CatalogMetadata  `json:"metadata,omitempty"`
+	SourceParams     map[string]string `json:"sourceParams"`
+}
+
+// GetSourceConnectionID returns the source connection ID from either the nested object or the flat field.
+func (e *CatalogEntry) GetSourceConnectionID() string {
+	if e.SourceConnection != nil {
+		return e.SourceConnection.ID
+	}
+	return e.SourceConnectionID
+}
+
+// GetLabelNames returns the label names as a string slice.
+func (e *CatalogEntry) GetLabelNames() []string {
+	names := make([]string, len(e.Labels))
+	for i, l := range e.Labels {
+		names[i] = l.Name
+	}
+	return names
 }
 
 // CatalogMetadata holds optional metadata for a catalog entry.
@@ -42,8 +67,9 @@ type AssetNode struct {
 	ID         string      `json:"id"`
 	Name       string      `json:"name"`
 	ParentID   *string     `json:"parentId"`
-	Children   []AssetNode `json:"children,omitempty"`
-	EntryCount int         `json:"entryCount,omitempty"`
+	Children   []AssetNode `json:"children"`
+	EntryIds   []string    `json:"entryIds,omitempty"`
+	EntryCount int         `json:"entryCount"`
 }
 
 // Label represents a DataCatalog label.

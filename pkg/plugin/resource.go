@@ -8,6 +8,8 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
+
+	"github.com/industream/industream-data-bridge/pkg/datacatalog"
 )
 
 // CallResource handles resource calls from the frontend (dropdowns, catalog data).
@@ -26,6 +28,7 @@ func (d *Datasource) resourceHandler() http.Handler {
 	mux.HandleFunc("GET /asset-tree", d.handleGetAssetTree)
 	mux.HandleFunc("GET /node-entries", d.handleGetNodeEntries)
 	mux.HandleFunc("GET /labels", d.handleGetLabels)
+	mux.HandleFunc("GET /variables", d.handleGetVariables)
 
 	return mux
 }
@@ -105,7 +108,7 @@ func (d *Datasource) handleGetCatalogEntries(w http.ResponseWriter, r *http.Requ
 	label := r.URL.Query().Get("label")
 	search := r.URL.Query().Get("search")
 
-	var entries interface{}
+	var entries []datacatalog.CatalogEntry
 	var err error
 
 	if ids != "" {
@@ -118,7 +121,7 @@ func (d *Datasource) handleGetCatalogEntries(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, entries)
+	writeJSON(w, d.filterEntriesByConnection(entries))
 }
 
 func (d *Datasource) handleGetAssetTree(w http.ResponseWriter, r *http.Request) {
@@ -127,17 +130,13 @@ func (d *Datasource) handleGetAssetTree(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if trees, ok := d.assetCache.Get("all"); ok {
-		writeJSON(w, trees)
-		return
-	}
+	d.ensureAssetTreeCached(r.Context())
 
-	trees, err := d.catalogClient.ListAssetDictionaries(r.Context())
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+	trees, ok := d.assetCache.Get("all")
+	if !ok {
+		writeError(w, http.StatusBadGateway, "failed to load asset tree")
 		return
 	}
-	d.assetCache.Set("all", trees)
 	writeJSON(w, trees)
 }
 
@@ -153,12 +152,123 @@ func (d *Datasource) handleGetNodeEntries(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	entries, err := d.catalogClient.ListNodeEntries(r.Context(), nodeId)
+	// Ensure the asset tree is cached so we can look up entryIds.
+	d.ensureAssetTreeCached(r.Context())
+
+	ids := d.findNodeEntryIds(nodeId)
+	if len(ids) == 0 {
+		writeJSON(w, []interface{}{})
+		return
+	}
+
+	entries, err := d.catalogClient.GetEntriesByIds(r.Context(), ids)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, entries)
+	writeJSON(w, d.filterEntriesByConnection(entries))
+}
+
+// ensureAssetTreeCached loads and caches the asset tree if not already cached.
+func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
+	if _, ok := d.assetCache.Get("all"); ok {
+		return
+	}
+	trees, err := d.catalogClient.ListAssetDictionaries(ctx)
+	if err != nil {
+		d.logger.Warn("Failed to load asset dictionaries for cache", "error", err)
+		return
+	}
+	for i := range trees {
+		flatNodes, err := d.catalogClient.ListAssetNodes(ctx, trees[i].ID)
+		if err != nil {
+			d.logger.Warn("Failed to fetch nodes for dictionary", "id", trees[i].ID, "error", err)
+			continue
+		}
+		trees[i].Nodes = buildNodeTree(flatNodes)
+	}
+	d.assetCache.Set("all", trees)
+}
+
+// buildNodeTree converts a flat list of nodes with parentId into a nested tree.
+func buildNodeTree(flat []datacatalog.AssetNode) []datacatalog.AssetNode {
+	byID := make(map[string]*datacatalog.AssetNode, len(flat))
+	for i := range flat {
+		flat[i].Children = nil // reset
+		byID[flat[i].ID] = &flat[i]
+	}
+
+	var roots []datacatalog.AssetNode
+	for i := range flat {
+		n := &flat[i]
+		if n.ParentID == nil {
+			roots = append(roots, *n)
+		} else if parent, ok := byID[*n.ParentID]; ok {
+			parent.Children = append(parent.Children, *n)
+		}
+	}
+
+	// Copy nested children back from byID map to roots
+	var buildTree func(id string) datacatalog.AssetNode
+	buildTree = func(id string) datacatalog.AssetNode {
+		n := byID[id]
+		result := *n
+		result.EntryCount = len(result.EntryIds)
+		result.Children = make([]datacatalog.AssetNode, 0)
+		for _, child := range n.Children {
+			nested := buildTree(child.ID)
+			result.Children = append(result.Children, nested)
+		}
+		return result
+	}
+
+	result := make([]datacatalog.AssetNode, 0, len(roots))
+	for _, root := range roots {
+		result = append(result, buildTree(root.ID))
+	}
+	return result
+}
+
+// findNodeEntryIds searches cached asset trees for a node's entryIds.
+func (d *Datasource) findNodeEntryIds(nodeId string) []string {
+	trees, ok := d.assetCache.Get("all")
+	if !ok {
+		return nil
+	}
+	for _, tree := range trees {
+		if ids := findInNodes(tree.Nodes, nodeId); ids != nil {
+			return ids
+		}
+	}
+	return nil
+}
+
+func findInNodes(nodes []datacatalog.AssetNode, nodeId string) []string {
+	for _, n := range nodes {
+		if n.ID == nodeId {
+			return n.EntryIds
+		}
+		if ids := findInNodes(n.Children, nodeId); ids != nil {
+			return ids
+		}
+	}
+	return nil
+}
+
+// filterEntriesByConnection filters entries to only include those matching the configured sourceConnectionId.
+// If no sourceConnectionId is configured, all entries are returned.
+func (d *Datasource) filterEntriesByConnection(entries []datacatalog.CatalogEntry) []datacatalog.CatalogEntry {
+	connId := d.settings.SourceConnectionId
+	if connId == "" {
+		return entries
+	}
+	filtered := make([]datacatalog.CatalogEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.GetSourceConnectionID() == connId {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
 }
 
 func (d *Datasource) handleGetLabels(w http.ResponseWriter, r *http.Request) {

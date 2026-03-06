@@ -29,9 +29,7 @@ func TestToDataFrame_NilResponse(t *testing.T) {
 
 func TestToDataFrame_FloatColumn(t *testing.T) {
 	resp := &RecordsResponse{
-		Columns: []RecordsColumn{
-			{Name: "temperature", DataType: "float64"},
-		},
+		Columns: []string{"temperature"},
 		Items: [][]interface{}{
 			{25.5},
 			{30.1},
@@ -69,9 +67,7 @@ func TestToDataFrame_FloatColumn(t *testing.T) {
 
 func TestToDataFrame_TimeColumn(t *testing.T) {
 	resp := &RecordsResponse{
-		Columns: []RecordsColumn{
-			{Name: "time", DataType: "dateTime"},
-		},
+		Columns: []string{"time"},
 		Items: [][]interface{}{
 			{"2025-01-01T00:00:00Z"},
 			{"2025-01-01T01:00:00Z"},
@@ -90,9 +86,7 @@ func TestToDataFrame_TimeColumn(t *testing.T) {
 
 func TestToDataFrame_BoolColumn(t *testing.T) {
 	resp := &RecordsResponse{
-		Columns: []RecordsColumn{
-			{Name: "status", DataType: "bool"},
-		},
+		Columns: []string{"status"},
 		Items: [][]interface{}{
 			{true},
 			{false},
@@ -112,11 +106,7 @@ func TestToDataFrame_BoolColumn(t *testing.T) {
 
 func TestToDataFrame_MultipleColumns(t *testing.T) {
 	resp := &RecordsResponse{
-		Columns: []RecordsColumn{
-			{Name: "time", DataType: "dateTime"},
-			{Name: "value", DataType: "float64"},
-			{Name: "label", DataType: "string"},
-		},
+		Columns: []string{"time", "value", "label"},
 		Items: [][]interface{}{
 			{"2025-01-01T00:00:00Z", 25.5, "sensor-a"},
 		},

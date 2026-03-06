@@ -11,6 +11,7 @@ import (
 type PluginSettings struct {
 	DataBridgeApiUrl     string `json:"dataBridgeApiUrl"`
 	DataCatalogApiUrl    string `json:"dataCatalogApiUrl"`
+	SourceConnectionId   string `json:"sourceConnectionId"`
 	DefaultDisplayName   string `json:"defaultDisplayNamePreset"`
 	DefaultAggregation   string `json:"defaultAggregation"`
 	MaxRawRows           int    `json:"maxRawRows"`

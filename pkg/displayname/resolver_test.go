@@ -15,7 +15,7 @@ func makeEntry(name, tagLevel1 string, descriptions map[string]string) *datacata
 			Description: descriptions,
 			Unit:        "degC",
 		},
-		Labels: []string{"analog"},
+		Labels: []datacatalog.Label{{ID: "test-label", Name: "analog"}},
 	}
 }
 

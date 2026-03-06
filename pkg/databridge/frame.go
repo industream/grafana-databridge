@@ -10,27 +10,41 @@ import (
 )
 
 // ToDataFrame converts a RecordsResponse into a Grafana data.Frame.
+// Column types are inferred from the first non-nil value in each column.
 func ToDataFrame(name string, resp *RecordsResponse) (*data.Frame, error) {
 	if resp == nil || len(resp.Columns) == 0 {
 		return data.NewFrame(name), nil
 	}
 
-	fields := make([]*data.Field, len(resp.Columns))
-	for i, col := range resp.Columns {
-		field, err := createField(col, len(resp.Items))
-		if err != nil {
-			return nil, fmt.Errorf("create field %q: %w", col.Name, err)
+	rowCount := len(resp.Items)
+	colCount := len(resp.Columns)
+
+	// Infer column types from the first non-nil value
+	colTypes := make([]string, colCount)
+	for colIdx := range resp.Columns {
+		for _, row := range resp.Items {
+			if colIdx < len(row) && row[colIdx] != nil {
+				colTypes[colIdx] = inferType(resp.Columns[colIdx], row[colIdx])
+				break
+			}
 		}
-		fields[i] = field
+		if colTypes[colIdx] == "" {
+			colTypes[colIdx] = "string" // fallback
+		}
+	}
+
+	fields := make([]*data.Field, colCount)
+	for i, colName := range resp.Columns {
+		fields[i] = createField(colName, colTypes[i], rowCount)
 	}
 
 	for rowIdx, row := range resp.Items {
-		for colIdx, col := range resp.Columns {
+		for colIdx := range resp.Columns {
 			if colIdx >= len(row) {
 				continue
 			}
-			if err := setFieldValue(fields[colIdx], rowIdx, col.DataType, row[colIdx]); err != nil {
-				return nil, fmt.Errorf("row %d col %q: %w", rowIdx, col.Name, err)
+			if err := setFieldValue(fields[colIdx], rowIdx, colTypes[colIdx], row[colIdx]); err != nil {
+				return nil, fmt.Errorf("row %d col %q: %w", rowIdx, resp.Columns[colIdx], err)
 			}
 		}
 	}
@@ -39,50 +53,66 @@ func ToDataFrame(name string, resp *RecordsResponse) (*data.Frame, error) {
 	return frame, nil
 }
 
-func createField(col RecordsColumn, rowCount int) (*data.Field, error) {
-	dt := normalizeDataType(col.DataType)
-	switch dt {
-	case "datetime", "timestamp":
-		values := make([]*time.Time, rowCount)
-		return data.NewField(col.Name, nil, values), nil
-	case "float64", "float32", "double", "decimal", "numeric":
-		values := make([]*float64, rowCount)
-		return data.NewField(col.Name, nil, values), nil
-	case "int64", "int32", "int16", "integer", "bigint", "smallint":
-		values := make([]*int64, rowCount)
-		return data.NewField(col.Name, nil, values), nil
-	case "bool", "boolean":
-		values := make([]*bool, rowCount)
-		return data.NewField(col.Name, nil, values), nil
-	case "string", "text", "varchar":
-		values := make([]*string, rowCount)
-		return data.NewField(col.Name, nil, values), nil
+// inferType determines the column type from the column name and a sample value.
+func inferType(colName string, value interface{}) string {
+	// Time columns are detected by name
+	lower := strings.ToLower(colName)
+	if lower == "time" || lower == "timestamp" || lower == "bucket" || strings.HasSuffix(lower, "_time") {
+		if _, ok := value.(string); ok {
+			return "datetime"
+		}
+	}
+
+	switch value.(type) {
+	case bool:
+		return "bool"
+	case float64:
+		return "float64"
+	case string:
+		// Try parsing as time
+		if _, err := parseTime(value); err == nil {
+			return "datetime"
+		}
+		return "string"
 	default:
-		values := make([]*string, rowCount)
-		return data.NewField(col.Name, nil, values), nil
+		return "string"
+	}
+}
+
+func createField(colName, dataType string, rowCount int) *data.Field {
+	switch dataType {
+	case "datetime":
+		return data.NewField(colName, nil, make([]*time.Time, rowCount))
+	case "float64":
+		return data.NewField(colName, nil, make([]*float64, rowCount))
+	case "int64":
+		return data.NewField(colName, nil, make([]*int64, rowCount))
+	case "bool":
+		return data.NewField(colName, nil, make([]*bool, rowCount))
+	default:
+		return data.NewField(colName, nil, make([]*string, rowCount))
 	}
 }
 
 func setFieldValue(field *data.Field, rowIdx int, dataType string, value interface{}) error {
 	if value == nil {
-		return nil // nullable field, leave as nil
+		return nil
 	}
 
-	dt := normalizeDataType(dataType)
-	switch dt {
-	case "datetime", "timestamp":
+	switch dataType {
+	case "datetime":
 		t, err := parseTime(value)
 		if err != nil {
 			return err
 		}
 		field.Set(rowIdx, t)
-	case "float64", "float32", "double", "decimal", "numeric":
+	case "float64":
 		v := toFloat64(value)
 		field.Set(rowIdx, v)
-	case "int64", "int32", "int16", "integer", "bigint", "smallint":
+	case "int64":
 		v := toInt64(value)
 		field.Set(rowIdx, v)
-	case "bool", "boolean":
+	case "bool":
 		v := toBool(value)
 		field.Set(rowIdx, v)
 	default:

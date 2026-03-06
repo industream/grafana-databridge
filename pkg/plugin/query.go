@@ -64,6 +64,11 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 		return backend.ErrDataResponse(backend.StatusBadRequest, "database and dataset are required")
 	}
 
+	// Apply default aggregation from settings when optimizeDisplay is on but no aggregation specified
+	if qd.OptimizeDisplay && qd.Aggregation == "" {
+		qd.Aggregation = d.settings.DefaultAggregation
+	}
+
 	// Enforce safety limits for raw queries
 	if !qd.OptimizeDisplay {
 		estimatedRows := estimateRawRows(query.TimeRange, len(qd.Select))
@@ -141,14 +146,20 @@ func (d *Datasource) resolveFromCatalog(ctx context.Context, qd *models.QueryDef
 	}
 
 	// Resolve the connection URL from the first entry's source connection
-	connectionUrl, err := d.resolveConnectionUrl(ctx, entries[0].SourceConnectionID)
+	connectionUrl, err := d.resolveConnectionUrl(ctx, entries[0].GetSourceConnectionID())
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve connection for entry: %w", err)
 	}
 
-	// Get database and dataset from source params
-	databaseName := entries[0].SourceParams["databaseName"]
-	datasetName := entries[0].SourceParams["datasetName"]
+	// Get database and dataset from source params (API uses "database"/"dataset" keys)
+	databaseName := entries[0].SourceParams["database"]
+	if databaseName == "" {
+		databaseName = entries[0].SourceParams["databaseName"]
+	}
+	datasetName := entries[0].SourceParams["dataset"]
+	if datasetName == "" {
+		datasetName = entries[0].SourceParams["datasetName"]
+	}
 
 	return connectionUrl, databaseName, datasetName, nil
 }
@@ -172,12 +183,12 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 		if agg != "" && qd.OptimizeDisplay {
 			rq.Select = append(rq.Select, databridge.SelectClause{
 				Function:   agg,
-				Parameters: []databridge.ColumnRef{{Column: col}},
+				Parameters: []databridge.QueryParam{{Column: col}},
 				Alias:      aliasOrDefault(s.Alias, col+"_"+agg),
 			})
 		} else {
 			rq.Select = append(rq.Select, databridge.SelectClause{
-				Column: &databridge.ColumnRef{Column: col},
+				Column: col,
 			})
 		}
 	}
@@ -189,16 +200,25 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	if qd.OptimizeDisplay && maxDataPoints > 0 {
 		windowSeconds := computeTimeWindow(timeRange, maxDataPoints)
 		if windowSeconds > 0 {
-			windowStr := formatDuration(time.Duration(windowSeconds) * time.Second)
+			isoDuration := formatISODuration(time.Duration(windowSeconds) * time.Second)
+			twParams := []databridge.QueryParam{
+				{Constant: isoDuration},
+				{Column: "time"},
+			}
+			// time_window must appear in both SELECT and GROUP BY
+			rq.Select = append(rq.Select, databridge.SelectClause{
+				Function:   "time_window",
+				Parameters: twParams,
+				Alias:      "time",
+			})
 			rq.GroupBy = append(rq.GroupBy, databridge.GroupClause{
 				Function:   "time_window",
-				Parameters: []interface{}{windowStr, "time"},
-				Alias:      "time",
+				Parameters: twParams,
 			})
 		}
 	}
 
-	// ORDER BY time ASC by default
+	// ORDER BY — use the time alias from time_window when in optimize mode
 	orderCol := qd.OrderByColumn
 	orderDir := qd.OrderByDirection
 	if orderCol == "" {
@@ -222,12 +242,12 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 func buildTimeRangeWhere(timeRange backend.TimeRange, userConditions []models.WhereCondition) *databridge.WhereExpression {
 	conditions := []databridge.WhereCondition{
 		{
-			Operator: "gte",
+			Operator: "greaterOrEqual",
 			Left:     &databridge.WhereOperand{Column: "time"},
 			Right:    &databridge.WhereOperand{Constant: timeRange.From.UTC().Format(time.RFC3339)},
 		},
 		{
-			Operator: "lt",
+			Operator: "less",
 			Left:     &databridge.WhereOperand{Column: "time"},
 			Right:    &databridge.WhereOperand{Constant: timeRange.To.UTC().Format(time.RFC3339)},
 		},
@@ -235,7 +255,7 @@ func buildTimeRangeWhere(timeRange backend.TimeRange, userConditions []models.Wh
 
 	for _, uc := range userConditions {
 		conditions = append(conditions, databridge.WhereCondition{
-			Operator: uc.Operator,
+			Operator: mapOperator(uc.Operator),
 			Left:     &databridge.WhereOperand{Column: uc.Column},
 			Right:    &databridge.WhereOperand{Constant: uc.Value},
 		})
@@ -287,7 +307,7 @@ func computeTimeWindow(timeRange backend.TimeRange, maxDataPoints int64) int64 {
 	}
 }
 
-// formatDuration formats seconds into a DataBridge-compatible duration string.
+// formatDuration formats seconds into a human-readable duration string.
 func formatDuration(d time.Duration) string {
 	hours := int(d.Hours())
 	if hours >= 24 && hours%24 == 0 {
@@ -305,6 +325,24 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%d second", int(d.Seconds()))
 }
 
+// formatISODuration converts a duration to ISO 8601 format (e.g. PT5M, PT1H, P1D).
+func formatISODuration(d time.Duration) string {
+	hours := int(d.Hours())
+	if hours >= 24 && hours%24 == 0 {
+		return fmt.Sprintf("P%dD", hours/24)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("PT%dH", hours)
+	}
+
+	minutes := int(d.Minutes())
+	if minutes > 0 {
+		return fmt.Sprintf("PT%dM", minutes)
+	}
+
+	return fmt.Sprintf("PT%dS", int(d.Seconds()))
+}
+
 // estimateRawRows estimates the number of rows for a raw query (1 row/second assumption).
 func estimateRawRows(timeRange backend.TimeRange, columnCount int) int64 {
 	if columnCount == 0 {
@@ -312,6 +350,26 @@ func estimateRawRows(timeRange backend.TimeRange, columnCount int) int64 {
 	}
 	rangeSeconds := int64(timeRange.To.Sub(timeRange.From).Seconds())
 	return rangeSeconds * int64(columnCount)
+}
+
+// mapOperator converts frontend operator names to DataBridge API operator names.
+func mapOperator(op string) string {
+	switch op {
+	case "eq":
+		return "equal"
+	case "neq":
+		return "notEqual"
+	case "gt":
+		return "greater"
+	case "gte":
+		return "greaterOrEqual"
+	case "lt":
+		return "less"
+	case "lte":
+		return "lessOrEqual"
+	default:
+		return op
+	}
 }
 
 func aliasOrDefault(alias, fallback string) string {

@@ -19,6 +19,8 @@ export type AggregationFunction =
   | 'var'
   | 'var_pop';
 
+export type AggregationOrNone = AggregationFunction | 'none';
+
 export type DisplayNamePreset =
   | 'entryName'
   | 'tagLevel1'
@@ -81,7 +83,6 @@ export const DEFAULT_QUERY: Partial<DataBridgeQuery> = {
   strategy: 'timeseries',
   optimizeDisplay: true,
   select: [],
-  aggregation: 'avg',
 };
 
 // --- Datasource configuration types ---
@@ -89,10 +90,11 @@ export const DEFAULT_QUERY: Partial<DataBridgeQuery> = {
 export interface DataBridgeOptions extends DataSourceJsonData {
   dataBridgeApiUrl?: string;
   dataCatalogApiUrl?: string;
+  sourceConnectionId?: string;
 
   // Display defaults
   defaultDisplayNamePreset?: DisplayNamePreset;
-  defaultAggregation?: AggregationFunction;
+  defaultAggregation?: AggregationOrNone;
 
   // Safety limits
   maxRawRows?: number;
@@ -133,9 +135,10 @@ export interface DatasetSchema {
 export interface CatalogEntry {
   id: string;
   name: string;
-  sourceConnectionId: string;
+  sourceConnection?: { id: string; name: string; url: string };
+  sourceConnectionId?: string;
   dataType: string;
-  labels: string[];
+  labels: Label[];
   metadata: CatalogEntryMetadata | null;
   sourceParams: Record<string, string>;
 }
@@ -155,6 +158,7 @@ export interface AssetNode {
   name: string;
   parentId: string | null;
   children: AssetNode[];
+  entryIds?: string[];
   entryCount: number;
 }
 

@@ -59,7 +59,7 @@ export function SelectedTags({
             {entry?.metadata?.unit && <span className={styles.unit}>{entry.metadata.unit}</span>}
 
             {entry && entry.labels.length > 0 && (
-              <Badge text={entry.labels[0]} color={labelColor(entry.labels[0])} className={styles.label} />
+              <Badge text={entry.labels[0].name} color={labelColor(entry.labels[0].name)} className={styles.label} />
             )}
 
             <Combobox

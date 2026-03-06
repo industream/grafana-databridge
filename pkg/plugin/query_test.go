@@ -80,8 +80,9 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 
 	rq := buildRecordsQuery(qd, tr, 1000)
 
-	if len(rq.Select) != 2 {
-		t.Fatalf("expected 2 select clauses, got %d", len(rq.Select))
+	// 2 data columns + 1 time_window = 3 select clauses
+	if len(rq.Select) != 3 {
+		t.Fatalf("expected 3 select clauses (2 data + 1 time_window), got %d", len(rq.Select))
 	}
 
 	// First column should use query-level aggregation
@@ -92,6 +93,11 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 	// Second column should use its own aggregation
 	if rq.Select[1].Function != "max" {
 		t.Errorf("expected function max, got %s", rq.Select[1].Function)
+	}
+
+	// Third select should be time_window
+	if rq.Select[2].Function != "time_window" {
+		t.Errorf("expected time_window in select, got %s", rq.Select[2].Function)
 	}
 
 	// Should have time_window GROUP BY
@@ -138,6 +144,9 @@ func TestBuildRecordsQuery_RawMode(t *testing.T) {
 	if rq.Select[0].Function != "" {
 		t.Errorf("expected no function in raw mode, got %s", rq.Select[0].Function)
 	}
+	if rq.Select[0].Column != "temperature" {
+		t.Errorf("expected column 'temperature', got %s", rq.Select[0].Column)
+	}
 }
 
 func TestBuildTimeRangeWhere(t *testing.T) {
@@ -152,11 +161,11 @@ func TestBuildTimeRangeWhere(t *testing.T) {
 	if len(where.Conditions) != 2 {
 		t.Fatalf("expected 2 conditions, got %d", len(where.Conditions))
 	}
-	if where.Conditions[0].Operator != "gte" {
-		t.Errorf("expected 'gte' for first condition, got %s", where.Conditions[0].Operator)
+	if where.Conditions[0].Operator != "greaterOrEqual" {
+		t.Errorf("expected 'greaterOrEqual' for first condition, got %s", where.Conditions[0].Operator)
 	}
-	if where.Conditions[1].Operator != "lt" {
-		t.Errorf("expected 'lt' for second condition, got %s", where.Conditions[1].Operator)
+	if where.Conditions[1].Operator != "less" {
+		t.Errorf("expected 'less' for second condition, got %s", where.Conditions[1].Operator)
 	}
 }
 
@@ -173,7 +182,7 @@ func TestBuildTimeRangeWhere_WithUserConditions(t *testing.T) {
 	if len(where.Conditions) != 3 {
 		t.Fatalf("expected 3 conditions (2 time + 1 user), got %d", len(where.Conditions))
 	}
-	if where.Conditions[2].Operator != "gt" {
-		t.Errorf("expected 'gt' for user condition, got %s", where.Conditions[2].Operator)
+	if where.Conditions[2].Operator != "greater" {
+		t.Errorf("expected 'greater' for user condition, got %s", where.Conditions[2].Operator)
 	}
 }

@@ -33,23 +33,24 @@ type RecordsQuery struct {
 
 // SelectClause represents a column selection with optional aggregation.
 type SelectClause struct {
-	Column     *ColumnRef `json:"column,omitempty"`
-	Function   string     `json:"function,omitempty"`
-	Parameters []ColumnRef `json:"parameters,omitempty"`
-	Alias      string     `json:"alias,omitempty"`
+	Column     string       `json:"column,omitempty"`
+	Function   string       `json:"function,omitempty"`
+	Parameters []QueryParam `json:"parameters,omitempty"`
+	Alias      string       `json:"alias,omitempty"`
 }
 
-// ColumnRef references a column by name.
-type ColumnRef struct {
-	Column string `json:"column"`
+// QueryParam is a polymorphic parameter that can be a column reference or a constant.
+type QueryParam struct {
+	Column   string      `json:"column,omitempty"`
+	Constant interface{} `json:"constant,omitempty"`
 }
 
 // GroupClause represents a GROUP BY expression.
 type GroupClause struct {
-	Column   *ColumnRef `json:"column,omitempty"`
-	Function string     `json:"function,omitempty"`
-	Parameters []interface{} `json:"parameters,omitempty"`
-	Alias    string     `json:"alias,omitempty"`
+	Column     string       `json:"column,omitempty"`
+	Function   string       `json:"function,omitempty"`
+	Parameters []QueryParam `json:"parameters,omitempty"`
+	Alias      string       `json:"alias,omitempty"`
 }
 
 // OrderClause represents an ORDER BY expression.
@@ -81,12 +82,6 @@ type WhereOperand struct {
 
 // RecordsResponse is the response from POST /records/query.
 type RecordsResponse struct {
-	Columns []RecordsColumn   `json:"columns"`
-	Items   [][]interface{}   `json:"items"`
-}
-
-// RecordsColumn describes a column in the response.
-type RecordsColumn struct {
-	Name     string `json:"name"`
-	DataType string `json:"dataType"`
+	Columns []string        `json:"columns"`
+	Items   [][]interface{} `json:"items"`
 }

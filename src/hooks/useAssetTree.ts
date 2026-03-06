@@ -10,8 +10,10 @@ export interface FlatTreeNode {
   depth: number;
   entryCount: number;
   isExpanded: boolean;
+  isLoading: boolean;
   entries: CatalogEntry[];
   children: FlatTreeNode[];
+  hasChildren: boolean;
 }
 
 interface UseAssetTreeResult {
@@ -38,6 +40,8 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
+  const [nodeEntries, setNodeEntries] = useState<Record<string, CatalogEntry[]>>({});
+  const [loadingNodeIds, setLoadingNodeIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
 
@@ -73,7 +77,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     let entries = allEntries;
 
     if (labelFilter) {
-      entries = entries.filter((e) => e.labels.includes(labelFilter));
+      entries = entries.filter((e) => e.labels.some((l) => l.name === labelFilter));
     }
 
     if (searchQuery.trim()) {
@@ -96,6 +100,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
 
     const flatten = (nodes: AssetNode[], depth: number) => {
       for (const node of nodes) {
+        const hasChildren = (node.children && node.children.length > 0) || node.entryCount > 0;
         const flatNode: FlatTreeNode = {
           id: node.id,
           name: node.name,
@@ -103,13 +108,17 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
           depth,
           entryCount: node.entryCount,
           isExpanded: expandedNodeIds.has(node.id),
-          entries: [],
+          isLoading: loadingNodeIds.has(node.id),
+          entries: nodeEntries[node.id] ?? [],
           children: [],
+          hasChildren,
         };
         result.push(flatNode);
 
-        if (node.children && node.children.length > 0 && expandedNodeIds.has(node.id)) {
-          flatten(node.children, depth + 1);
+        if (expandedNodeIds.has(node.id)) {
+          if (node.children && node.children.length > 0) {
+            flatten(node.children, depth + 1);
+          }
         }
       }
     };
@@ -119,7 +128,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     }
 
     return result;
-  }, [trees, expandedNodeIds]);
+  }, [trees, expandedNodeIds, nodeEntries, loadingNodeIds]);
 
   const toggleNode = (nodeId: string) => {
     setExpandedNodeIds((prev) => {
@@ -131,6 +140,26 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
       }
       return next;
     });
+
+    // Load entries for nodes that don't have children (leaf nodes)
+    if (!expandedNodeIds.has(nodeId) && !nodeEntries[nodeId]) {
+      setLoadingNodeIds((prev) => new Set([...prev, nodeId]));
+      datasource.getNodeEntries(nodeId).then((entries) => {
+        setNodeEntries((prev) => ({ ...prev, [nodeId]: entries ?? [] }));
+        setLoadingNodeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      }).catch((err) => {
+        console.error('Failed to load node entries', err);
+        setLoadingNodeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      });
+    }
   };
 
   const collectAllNodeIds = (nodes: AssetNode[]): string[] => {

@@ -29,11 +29,11 @@ func NewClient(baseURL string) *Client {
 
 // ListConnections returns all source connections from the DataCatalog.
 func (c *Client) ListConnections(ctx context.Context) ([]SourceConnection, error) {
-	var result []SourceConnection
-	if err := c.get(ctx, "/source-connections", nil, &result); err != nil {
+	var resp PaginatedResponse[SourceConnection]
+	if err := c.get(ctx, "/source-connections", nil, &resp); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return resp.Items, nil
 }
 
 // ListEntries returns catalog entries with optional filtering.
@@ -55,60 +55,73 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 }
 
 // GetEntriesByIds fetches catalog entries by their IDs.
+// The DataCatalog API does not support filtering by IDs, so we fetch all and filter client-side.
 func (c *Client) GetEntriesByIds(ctx context.Context, ids []string) ([]CatalogEntry, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	params := url.Values{"ids": {strings.Join(ids, ",")}}
 
-	var resp PaginatedResponse[CatalogEntry]
-	if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {
+	all, err := c.ListEntries(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+
+	idSet := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		idSet[id] = true
+	}
+
+	result := make([]CatalogEntry, 0, len(ids))
+	for _, entry := range all {
+		if idSet[entry.ID] {
+			result = append(result, entry)
+		}
+	}
+	return result, nil
+}
+
+// ListAssetDictionaries returns all asset dictionaries.
+func (c *Client) ListAssetDictionaries(ctx context.Context) ([]AssetDictionary, error) {
+	var resp PaginatedResponse[AssetDictionary]
+	if err := c.get(ctx, "/asset-dictionaries", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
 }
 
-// ListAssetDictionaries returns all asset dictionaries.
-func (c *Client) ListAssetDictionaries(ctx context.Context) ([]AssetDictionary, error) {
-	var result []AssetDictionary
-	if err := c.get(ctx, "/asset-dictionaries", nil, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // ListAssetNodes returns nodes for an asset dictionary, with entry counts.
 func (c *Client) ListAssetNodes(ctx context.Context, dictionaryId string) ([]AssetNode, error) {
-	var result []AssetNode
 	path := fmt.Sprintf("/asset-dictionaries/%s/nodes", dictionaryId)
-	if err := c.get(ctx, path, nil, &result); err != nil {
+	var resp PaginatedResponse[AssetNode]
+	if err := c.get(ctx, path, nil, &resp); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return resp.Items, nil
 }
 
 // ListNodeEntries returns catalog entries assigned to a node.
 func (c *Client) ListNodeEntries(ctx context.Context, nodeId string) ([]CatalogEntry, error) {
 	path := fmt.Sprintf("/asset-nodes/%s/entries", nodeId)
-	var result []CatalogEntry
-	if err := c.get(ctx, path, nil, &result); err != nil {
+	var resp PaginatedResponse[CatalogEntry]
+	if err := c.get(ctx, path, nil, &resp); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return resp.Items, nil
 }
 
 // ListLabels returns all labels from the DataCatalog.
 func (c *Client) ListLabels(ctx context.Context) ([]Label, error) {
-	var result []Label
-	if err := c.get(ctx, "/labels", nil, &result); err != nil {
+	var resp PaginatedResponse[Label]
+	if err := c.get(ctx, "/labels", nil, &resp); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return resp.Items, nil
 }
 
 // Ping checks connectivity to the DataCatalog API.
 func (c *Client) Ping(ctx context.Context) error {
-	return c.get(ctx, "/labels", nil, &[]Label{})
+	var resp PaginatedResponse[Label]
+	return c.get(ctx, "/labels", nil, &resp)
 }
 
 func (c *Client) get(ctx context.Context, path string, params url.Values, result interface{}) error {

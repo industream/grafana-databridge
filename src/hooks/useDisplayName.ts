@@ -53,7 +53,7 @@ function resolvePattern(
   }
 
   if (entry.labels.length > 0) {
-    result = result.replace(/\{label\}/g, entry.labels[0]);
+    result = result.replace(/\{label\}/g, entry.labels[0].name);
   }
 
   return result;

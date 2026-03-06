@@ -79,7 +79,7 @@ func resolvePattern(pattern string, ctx *ResolveContext) string {
 	}
 
 	if len(ctx.Entry.Labels) > 0 {
-		result = strings.ReplaceAll(result, "{label}", ctx.Entry.Labels[0])
+		result = strings.ReplaceAll(result, "{label}", ctx.Entry.Labels[0].Name)
 	}
 
 	return result
