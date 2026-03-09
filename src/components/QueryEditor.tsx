@@ -328,6 +328,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
                 onToggleNode={assetTree.toggleNode}
                 onExpandAll={assetTree.expandAll}
                 onCollapseAll={assetTree.collapseAll}
+                onRefresh={assetTree.refresh}
                 onSelectEntry={handleSelectEntry}
               />
             </div>

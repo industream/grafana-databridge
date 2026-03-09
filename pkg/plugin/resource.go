@@ -29,6 +29,7 @@ func (d *Datasource) resourceHandler() http.Handler {
 	mux.HandleFunc("GET /node-entries", d.handleGetNodeEntries)
 	mux.HandleFunc("GET /labels", d.handleGetLabels)
 	mux.HandleFunc("GET /variables", d.handleGetVariables)
+	mux.HandleFunc("POST /cache/clear", d.handleClearCache)
 
 	return mux
 }
@@ -364,6 +365,16 @@ func (d *Datasource) handleGetLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	d.labelCache.Set("all", labels)
 	writeJSON(w, labels)
+}
+
+func (d *Datasource) handleClearCache(w http.ResponseWriter, r *http.Request) {
+	d.connectionCache.Clear()
+	d.entryCache.Clear()
+	d.labelCache.Clear()
+	d.assetCache.Clear()
+	d.assetPathCache.Clear()
+	d.logger.Info("Cache cleared by user")
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, data interface{}) {

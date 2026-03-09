@@ -33,6 +33,7 @@ interface UseAssetTreeResult {
   filteredEntries: CatalogEntry[];
   selectedTreeId: string | null;
   setSelectedTreeId: (id: string | null) => void;
+  refresh: () => void;
 }
 
 export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
@@ -47,16 +48,27 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
   const [searchQuery, setSearchQuery] = useState('');
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
-  // Load trees, labels, and all entries on mount
+  // Load trees, labels, and all entries on mount (and on manual refresh)
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-    Promise.allSettled([
-      datasource.getAssetTree(),
-      datasource.getLabels(),
-      datasource.getCatalogEntries({}),
-    ])
+    const load = refreshCounter > 0
+      ? datasource.clearCache().then(() => Promise.allSettled([
+          datasource.getAssetTree(),
+          datasource.getLabels(),
+          datasource.getCatalogEntries({}),
+        ]))
+      : Promise.allSettled([
+          datasource.getAssetTree(),
+          datasource.getLabels(),
+          datasource.getCatalogEntries({}),
+        ]);
+
+    load
       .then(([treesResult, labelsResult, entriesResult]) => {
         if (cancelled) {
           return;
@@ -88,7 +100,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
       });
 
     return () => { cancelled = true; };
-  }, [datasource]);
+  }, [datasource, refreshCounter]);
 
   // Filter entries by search and label
   const filteredEntries = useMemo(() => {
@@ -203,6 +215,11 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     setExpandedNodeIds(new Set());
   };
 
+  const refresh = () => {
+    setNodeEntries({});
+    setRefreshCounter((c) => c + 1);
+  };
+
   // Build entryId -> asset path map from loaded trees
   const assetPaths = useMemo(() => {
     const paths: Record<string, string> = {};
@@ -241,6 +258,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     filteredEntries,
     selectedTreeId,
     setSelectedTreeId,
+    refresh,
     assetPaths,
   };
 }

@@ -24,6 +24,7 @@ interface AssetTreeProps {
   onToggleNode: (nodeId: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
+  onRefresh: () => void;
   onSelectEntry: (entry: CatalogEntry) => void;
 }
 
@@ -44,6 +45,7 @@ export function AssetTree({
   onToggleNode,
   onExpandAll,
   onCollapseAll,
+  onRefresh,
   onSelectEntry,
 }: AssetTreeProps) {
   const styles = useStyles2(getStyles);
@@ -104,6 +106,7 @@ export function AssetTree({
         />
         <IconButton name="angle-double-down" tooltip="Expand all" onClick={onExpandAll} size="sm" />
         <IconButton name="angle-double-up" tooltip="Collapse all" onClick={onCollapseAll} size="sm" />
+        <IconButton name="sync" tooltip="Refresh catalog" onClick={onRefresh} size="sm" />
       </div>
 
       {/* Tree or search results */}

@@ -108,4 +108,8 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
   async getLabels(): Promise<Label[]> {
     return this.getResource<Label[]>('labels');
   }
+
+  async clearCache(): Promise<void> {
+    await this.postResource('cache/clear', {});
+  }
 }
