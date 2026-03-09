@@ -203,16 +203,9 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		dr.Frames = append(dr.Frames, r.frames...)
 	}
 
-	if len(errors) > 0 && len(dr.Frames) > 0 {
-		// Partial failure: add a notice to the first frame so Grafana shows data + warning
-		notice := data.Notice{
-			Severity: data.NoticeSeverityWarning,
-			Text:     fmt.Sprintf("Some DataBridge targets failed: %s", strings.Join(errors, "; ")),
-		}
-		dr.Frames[0].Meta = &data.FrameMeta{Notices: []data.Notice{notice}}
-	} else if len(errors) > 0 {
-		// Total failure: return error
-		dr.Error = fmt.Errorf("all DataBridge targets failed: %s", strings.Join(errors, "; "))
+	if len(errors) > 0 {
+		// Set error so Grafana shows a red banner — frames are still rendered alongside
+		dr.Error = fmt.Errorf("some DataBridge targets failed: %s", strings.Join(errors, "; "))
 	}
 
 	return dr
