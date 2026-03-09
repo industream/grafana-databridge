@@ -67,10 +67,11 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
       })
       .catch((err) => {
         if (!cancelled) {
-          const status = err?.status ?? err?.statusCode ?? '';
           const detail = err?.data?.error ?? err?.data?.message ?? err?.message ?? '';
-          const message = status === 502 || status === 503
-            ? `DataCatalog is unreachable (HTTP ${status}). Check that the DataCatalog API is running.`
+          const isUnreachable = detail.includes('dial tcp') || detail.includes('connection refused')
+            || detail.includes('no such host') || err?.status === 502 || err?.status === 503;
+          const message = isUnreachable
+            ? 'DataCatalog is unreachable. Check that the DataCatalog API is running.'
             : detail || 'Failed to load asset tree';
           setError(message);
           setLoading(false);
