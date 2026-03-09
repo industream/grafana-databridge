@@ -36,14 +36,6 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 	}
 	qd.ParseWhere()
 
-	// Resolve per-tag "optimized" aggregation to concrete functions based on dataType
-	for i := range qd.Select {
-		s := &qd.Select[i]
-		if s.Aggregation == "" || s.Aggregation == "optimized" {
-			s.Aggregation = compatibleAggregation(s.DataType)
-		}
-	}
-
 	switch qd.Mode {
 	case "raw":
 		return d.handleRawQuery(ctx, query, &qd)
@@ -51,6 +43,18 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 		return d.handleCatalogQuery(ctx, query, &qd)
 	default:
 		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("unknown mode: %s", qd.Mode))
+	}
+}
+
+// resolveAggregations resolves "optimized" and incompatible aggregations based on DataType.
+func resolveAggregations(selectItems []models.SelectDefinition) {
+	for i := range selectItems {
+		s := &selectItems[i]
+		if s.Aggregation == "" || s.Aggregation == "optimized" {
+			s.Aggregation = compatibleAggregation(s.DataType)
+		} else if !isAggregationCompatible(s.Aggregation, s.DataType) {
+			s.Aggregation = compatibleAggregation(s.DataType)
+		}
 	}
 }
 
@@ -65,6 +69,7 @@ func (d *Datasource) handleRawQuery(ctx context.Context, query backend.DataQuery
 		return backend.ErrDataResponse(backend.StatusBadRequest, "database and dataset are required")
 	}
 
+	resolveAggregations(qd.Select)
 	d.applySafetyLimits(qd, query.TimeRange)
 
 	recordsQuery := buildRecordsQuery(qd, query.TimeRange, query.MaxDataPoints)
@@ -108,6 +113,18 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 	for i := range entries {
 		entryMap[entries[i].ID] = &entries[i]
 	}
+
+	// Enrich DataType from catalog entries (frontend may send empty dataType in saved queries)
+	for i := range qd.Select {
+		s := &qd.Select[i]
+		if s.DataType == "" {
+			if entry, ok := entryMap[s.CatalogEntryId]; ok {
+				s.DataType = entry.DataType
+			}
+		}
+	}
+
+	resolveAggregations(qd.Select)
 
 	// Group select items by (connectionUrl, database, dataset)
 	targets, err := d.groupByTarget(ctx, qd.Select, entryMap)
