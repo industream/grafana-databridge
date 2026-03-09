@@ -3,11 +3,12 @@ import { css } from '@emotion/css';
 import { Badge, Combobox, FilterInput, Icon, IconButton, Spinner, Stack, Tooltip, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { CatalogEntry, Label } from '../types';
+import { AssetTree as AssetTreeType, CatalogEntry, Label } from '../types';
 import { FlatTreeNode } from '../hooks/useAssetTree';
 import { dataTypeColor, labelColor } from '../utils/colors';
 
 interface AssetTreeProps {
+  trees: AssetTreeType[];
   flatNodes: FlatTreeNode[];
   labels: Label[];
   filteredEntries: CatalogEntry[];
@@ -16,8 +17,10 @@ interface AssetTreeProps {
   searchQuery: string;
   labelFilter: string | null;
   selectedEntryIds: Set<string>;
+  selectedTreeId: string | null;
   onSearchChange: (query: string) => void;
   onLabelFilterChange: (label: string | null) => void;
+  onTreeChange: (treeId: string | null) => void;
   onToggleNode: (nodeId: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
@@ -25,6 +28,7 @@ interface AssetTreeProps {
 }
 
 export function AssetTree({
+  trees,
   flatNodes,
   labels,
   filteredEntries,
@@ -33,8 +37,10 @@ export function AssetTree({
   searchQuery,
   labelFilter,
   selectedEntryIds,
+  selectedTreeId,
   onSearchChange,
   onLabelFilterChange,
+  onTreeChange,
   onToggleNode,
   onExpandAll,
   onCollapseAll,
@@ -43,6 +49,11 @@ export function AssetTree({
   const styles = useStyles2(getStyles);
 
   const labelOptions = labels.map((l) => ({ label: l.name, value: l.name }));
+  const treeOptions = [
+    { label: 'All dictionaries', value: '__all__' },
+    ...trees.map((t) => ({ label: t.name, value: t.id })),
+  ];
+  const showTreeSelector = trees.length > 1;
 
   if (loading) {
     return (
@@ -67,8 +78,16 @@ export function AssetTree({
 
   return (
     <div className={styles.container}>
-      {/* Search bar + label filter */}
+      {/* Dictionary selector + search bar + label filter */}
       <div className={styles.toolbar}>
+        {showTreeSelector && (
+          <Combobox
+            options={treeOptions}
+            value={selectedTreeId ?? '__all__'}
+            onChange={(option) => onTreeChange(option?.value === '__all__' ? null : option?.value ?? null)}
+            width={20}
+          />
+        )}
         <FilterInput
           placeholder="Search tags..."
           value={searchQuery}

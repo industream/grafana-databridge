@@ -312,6 +312,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
           <div className={styles.twoColumn}>
             <div className={styles.treePanel}>
               <AssetTree
+                trees={assetTree.trees}
                 flatNodes={assetTree.flatNodes}
                 labels={assetTree.labels}
                 filteredEntries={assetTree.filteredEntries}
@@ -320,8 +321,10 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
                 searchQuery={assetTree.searchQuery}
                 labelFilter={assetTree.labelFilter}
                 selectedEntryIds={selectedEntryIds}
+                selectedTreeId={assetTree.selectedTreeId}
                 onSearchChange={assetTree.setSearchQuery}
                 onLabelFilterChange={assetTree.setLabelFilter}
+                onTreeChange={assetTree.setSelectedTreeId}
                 onToggleNode={assetTree.toggleNode}
                 onExpandAll={assetTree.expandAll}
                 onCollapseAll={assetTree.collapseAll}

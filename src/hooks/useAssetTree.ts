@@ -31,6 +31,8 @@ interface UseAssetTreeResult {
   labelFilter: string | null;
   setLabelFilter: (label: string | null) => void;
   filteredEntries: CatalogEntry[];
+  selectedTreeId: string | null;
+  setSelectedTreeId: (id: string | null) => void;
 }
 
 export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
@@ -44,6 +46,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
   const [loadingNodeIds, setLoadingNodeIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
 
   // Load trees, labels, and all entries on mount
   useEffect(() => {
@@ -94,9 +97,12 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     return entries;
   }, [allEntries, searchQuery, labelFilter]);
 
-  // Build flat tree for rendering
+  // Build flat tree for rendering, filtered by selected dictionary
   const flatNodes = useMemo(() => {
     const result: FlatTreeNode[] = [];
+    const visibleTrees = selectedTreeId
+      ? trees.filter((t) => t.id === selectedTreeId)
+      : trees;
 
     const flatten = (nodes: AssetNode[], depth: number) => {
       for (const node of nodes) {
@@ -123,12 +129,12 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
       }
     };
 
-    for (const tree of trees) {
+    for (const tree of visibleTrees) {
       flatten(tree.nodes, 0);
     }
 
     return result;
-  }, [trees, expandedNodeIds, nodeEntries, loadingNodeIds]);
+  }, [trees, selectedTreeId, expandedNodeIds, nodeEntries, loadingNodeIds]);
 
   const toggleNode = (nodeId: string) => {
     setExpandedNodeIds((prev) => {
@@ -218,6 +224,8 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
     labelFilter,
     setLabelFilter,
     filteredEntries,
+    selectedTreeId,
+    setSelectedTreeId,
     assetPaths,
   };
 }
