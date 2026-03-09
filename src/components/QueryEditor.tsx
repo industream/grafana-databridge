@@ -299,6 +299,13 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         </InlineField>
       </InlineFieldRow>
 
+      {/* Safety banner */}
+      <SafetyBanner
+        estimate={rowEstimate}
+        optimizeDisplay={optimizeDisplay}
+        maxRawRows={maxRawRows}
+      />
+
       {/* DataCatalog mode: asset tree + selected tags */}
       {(query.mode ?? 'dataCatalog') === 'dataCatalog' && (
         <div className={styles.catalogSection}>
@@ -398,13 +405,6 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
           )}
         </>
       )}
-
-      {/* Safety banner */}
-      <SafetyBanner
-        estimate={rowEstimate}
-        optimizeDisplay={optimizeDisplay}
-        maxRawRows={maxRawRows}
-      />
 
       {/* Query options: aggregation, filters, order, advanced */}
       <QueryOptions
