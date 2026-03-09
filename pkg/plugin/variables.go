@@ -120,7 +120,7 @@ func (d *Datasource) handleGetVariables(w http.ResponseWriter, r *http.Request) 
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error": "unknown variable type: " + queryType,
 			"hint":  "valid types: connections, databases, datasets, entries, labels",
 		})

@@ -122,9 +122,6 @@ func setFieldValue(field *data.Field, rowIdx int, dataType string, value interfa
 	return nil
 }
 
-func normalizeDataType(dt string) string {
-	return strings.ToLower(strings.TrimSpace(dt))
-}
 
 func parseTime(value interface{}) (*time.Time, error) {
 	switch v := value.(type) {
