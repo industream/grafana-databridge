@@ -67,7 +67,12 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err.message ?? 'Failed to load asset tree');
+          const status = err?.status ?? err?.statusCode ?? '';
+          const detail = err?.data?.error ?? err?.data?.message ?? err?.message ?? '';
+          const message = status === 502 || status === 503
+            ? `DataCatalog is unreachable (HTTP ${status}). Check that the DataCatalog API is running.`
+            : detail || 'Failed to load asset tree';
+          setError(message);
           setLoading(false);
         }
       });
