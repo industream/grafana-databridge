@@ -546,11 +546,10 @@ func isAggregationCompatible(agg, dataType string) bool {
 }
 
 // compatibleAggregation returns a safe fallback aggregation for non-numeric types.
-// Uses "count" for bool/string because SQL Server does not support first/last/min/max on BIT columns.
 func compatibleAggregation(dataType string) string {
 	switch dataType {
 	case "bool", "string":
-		return "count"
+		return "last"
 	default:
 		return "avg"
 	}
