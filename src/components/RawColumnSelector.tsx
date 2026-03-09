@@ -24,6 +24,10 @@ const OPERATION_OPTIONS = [
   { label: 'count', value: 'count' },
   { label: 'first', value: 'first' },
   { label: 'last', value: 'last' },
+  { label: 'stddev', value: 'stddev' },
+  { label: 'stddev (pop)', value: 'stddev_pop' },
+  { label: 'variance', value: 'var' },
+  { label: 'variance (pop)', value: 'var_pop' },
 ];
 
 export function RawColumnSelector({
