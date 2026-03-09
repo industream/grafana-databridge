@@ -188,16 +188,33 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 	}
 	wg.Wait()
 
-	// Collect all frames
+	// Collect all frames — partial failures show data from healthy targets + a notice frame
 	var dr backend.DataResponse
-	for _, r := range results {
+	var errors []string
+
+	for i, r := range results {
 		if r.err != nil {
-			d.logger.Warn("Sub-query error in multi-connection query", "error", r.err)
-			dr.Error = r.err
+			target := targets[i]
+			msg := fmt.Sprintf("%s/%s: %v", target.databaseName, target.datasetName, r.err)
+			d.logger.Warn("Sub-query failed", "target", msg)
+			errors = append(errors, msg)
 			continue
 		}
 		dr.Frames = append(dr.Frames, r.frames...)
 	}
+
+	if len(errors) > 0 && len(dr.Frames) > 0 {
+		// Partial failure: add a notice to the first frame so Grafana shows data + warning
+		notice := data.Notice{
+			Severity: data.NoticeSeverityWarning,
+			Text:     fmt.Sprintf("Some DataBridge targets failed: %s", strings.Join(errors, "; ")),
+		}
+		dr.Frames[0].Meta = &data.FrameMeta{Notices: []data.Notice{notice}}
+	} else if len(errors) > 0 {
+		// Total failure: return error
+		dr.Error = fmt.Errorf("all DataBridge targets failed: %s", strings.Join(errors, "; "))
+	}
+
 	return dr
 }
 
@@ -257,7 +274,7 @@ func (d *Datasource) executeAndConvert(ctx context.Context, bridgeUrl, databaseN
 	client := d.dataBridgeClient(bridgeUrl)
 	resp, err := client.QueryRecords(ctx, databaseName, datasetName, rq)
 	if err != nil {
-		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("query records: %v", err))
+		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("query %s/%s on %s: %v", databaseName, datasetName, bridgeUrl, err))
 	}
 
 	frame, err := databridge.ToDataFrame(refID, resp)
