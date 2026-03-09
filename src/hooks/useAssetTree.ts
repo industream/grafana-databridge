@@ -54,6 +54,7 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
   // Load trees, labels, and all entries on mount (and on manual refresh)
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset loading state on dependency change
     setLoading(true);
     setError(null);
 

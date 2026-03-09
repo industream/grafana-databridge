@@ -143,6 +143,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
   // Load schema columns when dataset is selected in Raw mode
   useEffect(() => {
     if (!query.connectionId || !query.databaseName || !query.datasetName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state on dependency change
       setSchemaColumns([]);
       return;
     }
