@@ -20,7 +20,6 @@ interface QueryOptionsProps {
   isMultiDataset?: boolean;
 }
 
-const LABEL_WIDTH = 14;
 
 function countConditions(filter?: FilterDefinition): number {
   if (!filter) {

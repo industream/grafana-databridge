@@ -34,6 +34,7 @@ interface UseAssetTreeResult {
   selectedTreeId: string | null;
   setSelectedTreeId: (id: string | null) => void;
   refresh: () => void;
+  assetPaths: Record<string, string>;
 }
 
 export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
