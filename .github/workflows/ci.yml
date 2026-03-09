@@ -129,6 +129,16 @@ jobs:
           path: ${{ steps.metadata.outputs.plugin-id }}
           retention-days: 5
 
+      - name: Trigger grafana-industream image build
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+        run: |
+          gh api repos/industream/grafana-industream/dispatches \
+            -f event_type=databridge-plugin-built \
+            -f "client_payload[run_id]=${{ github.run_id }}" \
+            -f "client_payload[push]=true"
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+
   resolve-versions:
     name: Resolve e2e images
     runs-on: ubuntu-latest
