@@ -52,30 +52,39 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
+    Promise.allSettled([
       datasource.getAssetTree(),
       datasource.getLabels(),
       datasource.getCatalogEntries({}),
     ])
-      .then(([treesData, labelsData, entriesData]) => {
-        if (!cancelled) {
-          setTrees(treesData ?? []);
-          setLabels(labelsData ?? []);
-          setAllEntries(entriesData ?? []);
-          setLoading(false);
+      .then(([treesResult, labelsResult, entriesResult]) => {
+        if (cancelled) {
+          return;
         }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          const detail = err?.data?.error ?? err?.data?.message ?? err?.message ?? '';
+
+        // Check if any request failed
+        const failures = [treesResult, labelsResult, entriesResult].filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+
+        if (failures.length > 0) {
+          const reason = failures[0].reason;
+          const detail = reason?.data?.error ?? reason?.data?.message ?? reason?.message ?? '';
           const isUnreachable = detail.includes('dial tcp') || detail.includes('connection refused')
-            || detail.includes('no such host') || err?.status === 502 || err?.status === 503;
-          const message = isUnreachable
-            ? 'DataCatalog is unreachable. Check that the DataCatalog API is running.'
-            : detail || 'Failed to load asset tree';
-          setError(message);
+            || detail.includes('no such host') || reason?.status === 502 || reason?.status === 503;
+          setError(
+            isUnreachable
+              ? 'DataCatalog is unreachable. Check that the DataCatalog API is running.'
+              : detail || 'Failed to load asset tree'
+          );
           setLoading(false);
+          return;
         }
+
+        setTrees((treesResult as PromiseFulfilledResult<AssetTree[]>).value ?? []);
+        setLabels((labelsResult as PromiseFulfilledResult<Label[]>).value ?? []);
+        setAllEntries((entriesResult as PromiseFulfilledResult<CatalogEntry[]>).value ?? []);
+        setLoading(false);
       });
 
     return () => { cancelled = true; };

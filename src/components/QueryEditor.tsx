@@ -118,7 +118,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     let cancelled = false;
     datasource.getConnections().then((data) => {
       if (!cancelled) { setConnections(data); }
-    }).catch(console.error);
+    }).catch(() => {}); // Silently ignore — DataCatalog may be down
     return () => { cancelled = true; };
   }, [datasource]);
 
@@ -165,7 +165,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     let cancelled = false;
     datasource.getCatalogEntries({ ids: ids.join(',') }).then((data) => {
       if (!cancelled) { setCatalogEntries(data ?? []); }
-    }).catch(console.error);
+    }).catch(() => {}); // Silently ignore — DataCatalog may be down
     return () => { cancelled = true; };
   }, [datasource, query.select]);
 
