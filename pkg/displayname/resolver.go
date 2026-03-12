@@ -50,9 +50,11 @@ func Resolve(preset, pattern string, ctx *ResolveContext) string {
 }
 
 func descriptionOrName(entry *datacatalog.CatalogEntry, locale string) string {
-	if entry.Metadata != nil && entry.Metadata.Description != nil {
-		if desc, ok := entry.Metadata.Description[locale]; ok && desc != "" {
-			return desc
+	if entry.Metadata != nil {
+		if descMap := entry.Metadata.Description(); descMap != nil {
+			if desc, ok := descMap[locale]; ok && desc != "" {
+				return desc
+			}
 		}
 	}
 	return entry.Name
@@ -70,8 +72,8 @@ func resolvePattern(pattern string, ctx *ResolveContext) string {
 		result = strings.ReplaceAll(result, "{tagLevel1}", ctx.Entry.Metadata.TagLevel1)
 		result = strings.ReplaceAll(result, "{unit}", ctx.Entry.Metadata.Unit)
 
-		if ctx.Entry.Metadata.Description != nil {
-			for locale, desc := range ctx.Entry.Metadata.Description {
+		if descMap := ctx.Entry.Metadata.Description(); descMap != nil {
+			for locale, desc := range descMap {
 				placeholder := "{description." + locale + "}"
 				result = strings.ReplaceAll(result, placeholder, desc)
 			}

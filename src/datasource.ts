@@ -10,6 +10,7 @@ import {
   DatasetInfo,
   DatasetSchema,
   CatalogEntry,
+  CatalogEntryMetadata,
   AssetTree,
   Label,
 } from './types';
@@ -94,7 +95,8 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
   }
 
   async getCatalogEntries(params: { ids?: string; label?: string; search?: string }): Promise<CatalogEntry[]> {
-    return this.getResource<CatalogEntry[]>('catalog-entries', params);
+    const entries = await this.getResource<CatalogEntry[]>('catalog-entries', params);
+    return entries.map(normalizeEntry);
   }
 
   async getAssetTree(): Promise<AssetTree[]> {
@@ -102,7 +104,8 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
   }
 
   async getNodeEntries(nodeId: string): Promise<CatalogEntry[]> {
-    return this.getResource<CatalogEntry[]>('node-entries', { nodeId });
+    const entries = await this.getResource<CatalogEntry[]>('node-entries', { nodeId });
+    return entries.map(normalizeEntry);
   }
 
   async getLabels(): Promise<Label[]> {
@@ -112,4 +115,38 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
   async clearCache(): Promise<void> {
     await this.postResource('cache/clear', {});
   }
+}
+
+/**
+ * Normalize metadata from DataCatalog API:
+ * - description: parse JSON string into Record<string, string>
+ * - min/max/decimals/scale: convert string to number
+ */
+function normalizeEntry(entry: CatalogEntry): CatalogEntry {
+  if (!entry.metadata) {
+    return entry;
+  }
+
+  const meta = { ...entry.metadata } as Record<string, unknown>;
+
+  // Parse description if it's a JSON string
+  if (typeof meta.description === 'string') {
+    try {
+      meta.description = JSON.parse(meta.description as string);
+    } catch {
+      // Leave as-is if not valid JSON
+    }
+  }
+
+  // Convert numeric fields from string to number
+  for (const key of ['min', 'max', 'decimals', 'scale'] as const) {
+    if (typeof meta[key] === 'string' && meta[key] !== '') {
+      const num = Number(meta[key]);
+      if (!isNaN(num)) {
+        meta[key] = num;
+      }
+    }
+  }
+
+  return { ...entry, metadata: meta as CatalogEntryMetadata };
 }

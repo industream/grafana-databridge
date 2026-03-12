@@ -109,9 +109,25 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("fetch entries: %v", err))
 	}
 
+	// Remap non-DataBridge entries to their DataBridge counterparts (same name).
+	// This handles saved queries that reference MQTT/OPC-UA entry IDs.
+	entries, remappedIds := d.remapToDataBridge(ctx, entries)
+
 	entryMap := make(map[string]*datacatalog.CatalogEntry, len(entries))
 	for i := range entries {
 		entryMap[entries[i].ID] = &entries[i]
+	}
+
+	// Update select items with remapped entry IDs
+	if len(remappedIds) > 0 {
+		for i := range qd.Select {
+			if newId, ok := remappedIds[qd.Select[i].CatalogEntryId]; ok {
+				qd.Select[i].CatalogEntryId = newId
+				if entry, ok := entryMap[newId]; ok {
+					qd.Select[i].Column = entry.GetSourceParam("column")
+				}
+			}
+		}
 	}
 
 	// Enrich DataType from catalog entries (frontend may send empty dataType in saved queries)
@@ -234,13 +250,13 @@ func (d *Datasource) groupByTarget(ctx context.Context, selectItems []models.Sel
 			return nil, fmt.Errorf("resolve connection %s: %w", connId, err)
 		}
 
-		dbName := entry.SourceParams["database"]
+		dbName := entry.GetSourceParam("database")
 		if dbName == "" {
-			dbName = entry.SourceParams["databaseName"]
+			dbName = entry.GetSourceParam("databaseName")
 		}
-		dsName := entry.SourceParams["dataset"]
+		dsName := entry.GetSourceParam("dataset")
 		if dsName == "" {
-			dsName = entry.SourceParams["datasetName"]
+			dsName = entry.GetSourceParam("datasetName")
 		}
 
 		key := targetKey{bridgeUrl: bridgeUrl, databaseName: dbName, datasetName: dsName}
@@ -635,22 +651,22 @@ func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.Quer
 			if entry.Metadata.Unit != "" {
 				fc.Unit = entry.Metadata.Unit
 			}
-			if entry.Metadata.Min != nil {
-				fc.SetMin(*entry.Metadata.Min)
+			if entry.Metadata.Min.Value != nil {
+				fc.SetMin(*entry.Metadata.Min.Value)
 			}
-			if entry.Metadata.Max != nil {
-				fc.SetMax(*entry.Metadata.Max)
+			if entry.Metadata.Max.Value != nil {
+				fc.SetMax(*entry.Metadata.Max.Value)
 			}
-			if entry.Metadata.Decimals != nil {
-				fc.SetDecimals(uint16(*entry.Metadata.Decimals))
+			if entry.Metadata.Decimals.Value != nil {
+				fc.SetDecimals(uint16(*entry.Metadata.Decimals.Value))
 			}
 			// Build thresholds from min/max for visual display in gauges and panels
-			if entry.Metadata.Min != nil && entry.Metadata.Max != nil {
+			if entry.Metadata.Min.Value != nil && entry.Metadata.Max.Value != nil {
 				fc.Thresholds = &data.ThresholdsConfig{
 					Mode: data.ThresholdsModeAbsolute,
 					Steps: []data.Threshold{
-						data.NewThreshold(*entry.Metadata.Min, "green", ""),
-						data.NewThreshold(*entry.Metadata.Max, "red", ""),
+						data.NewThreshold(*entry.Metadata.Min.Value, "green", ""),
+						data.NewThreshold(*entry.Metadata.Max.Value, "red", ""),
 					},
 				}
 			}
@@ -669,11 +685,13 @@ func buildFieldDescription(entry *datacatalog.CatalogEntry) string {
 	var parts []string
 
 	// Description (prefer English)
-	if entry.Metadata != nil && entry.Metadata.Description != nil {
-		if desc, ok := entry.Metadata.Description["en-US"]; ok && desc != "" {
-			parts = append(parts, desc)
-		} else if desc, ok := entry.Metadata.Description["de-DE"]; ok && desc != "" {
-			parts = append(parts, desc)
+	if entry.Metadata != nil {
+		if descMap := entry.Metadata.Description(); descMap != nil {
+			if desc, ok := descMap["en-US"]; ok && desc != "" {
+				parts = append(parts, desc)
+			} else if desc, ok := descMap["de-DE"]; ok && desc != "" {
+				parts = append(parts, desc)
+			}
 		}
 	}
 
@@ -688,12 +706,12 @@ func buildFieldDescription(entry *datacatalog.CatalogEntry) string {
 	}
 
 	// Range
-	if entry.Metadata != nil && entry.Metadata.Min != nil && entry.Metadata.Max != nil {
+	if entry.Metadata != nil && entry.Metadata.Min.Value != nil && entry.Metadata.Max.Value != nil {
 		unit := ""
 		if entry.Metadata.Unit != "" {
 			unit = " " + entry.Metadata.Unit
 		}
-		parts = append(parts, fmt.Sprintf("Range: %g – %g%s", *entry.Metadata.Min, *entry.Metadata.Max, unit))
+		parts = append(parts, fmt.Sprintf("Range: %g – %g%s", *entry.Metadata.Min.Value, *entry.Metadata.Max.Value, unit))
 	}
 
 	return strings.Join(parts, " | ")

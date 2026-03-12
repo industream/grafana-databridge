@@ -1,11 +1,10 @@
 import React from 'react';
 import { css } from '@emotion/css';
-import { Badge, Combobox, IconButton, Tooltip, useStyles2 } from '@grafana/ui';
+import { Combobox, IconButton, Tooltip, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
 import { CatalogEntry, DisplayNamePreset, SelectDefinition, TagOperation } from '../types';
 import { resolveDisplayName } from '../hooks/useDisplayName';
-import { dataTypeColor, labelColor } from '../utils/colors';
 
 interface SelectedTagsProps {
   select: SelectDefinition[];
@@ -63,46 +62,31 @@ export function SelectedTags({
         });
 
         const meta = entry?.metadata;
+
+        // Build detailed tooltip with all metadata
         const tooltipLines = [
           meta?.tagLevel1 ?? item.column ?? '',
-          meta?.description?.['en-US'] ? `${meta.description['en-US']}` : '',
+          meta?.description?.['en-US'] ? meta.description['en-US'] : '',
+          entry?.dataType ? `Type: ${entry.dataType}` : '',
           meta?.unit ? `Unit: ${meta.unit}` : '',
           meta?.min != null && meta?.max != null ? `Range: ${meta.min} – ${meta.max}` : '',
           meta?.decimals != null ? `Decimals: ${meta.decimals}` : '',
+          entry?.labels?.length ? `Labels: ${entry.labels.map((l) => l.name).join(', ')}` : '',
         ].filter(Boolean).join('\n');
-
-        const rangeLabel = meta?.min != null && meta?.max != null
-          ? `${meta.min}..${meta.max}`
-          : undefined;
 
         return (
           <div key={item.catalogEntryId ?? item.column ?? index} className={styles.tagRow}>
-            <Tooltip content={tooltipLines} placement="top">
+            <Tooltip content={tooltipLines} placement="left">
               <span className={styles.tagName}>{displayName}</span>
             </Tooltip>
 
-            {entry?.dataType && (
-              <Badge text={entry.dataType} color={dataTypeColor(entry.dataType)} className={styles.typeBadge} />
-            )}
-
             {meta?.unit && <span className={styles.unit}>{meta.unit}</span>}
-
-            {rangeLabel && <span className={styles.range}>[{rangeLabel}]</span>}
-
-            {entry && entry.labels.length > 0 && (
-              <Badge text={entry.labels[0].name} color={labelColor(entry.labels[0].name)} className={styles.label} />
-            )}
-            {entry && entry.labels.length > 1 && (
-              <Tooltip content={entry.labels.map((l) => l.name).join(', ')} placement="top">
-                <Badge text={`+${entry.labels.length - 1}`} color="blue" className={styles.label} />
-              </Tooltip>
-            )}
 
             <Combobox
               options={OPERATION_OPTIONS}
               value={item.aggregation ?? 'optimized'}
               onChange={(option) => onAggregationChange(index, option.value as TagOperation)}
-              width={12}
+              width={14}
             />
 
             <IconButton name="times" tooltip="Remove" onClick={() => onRemove(index)} size="sm" />
@@ -127,7 +111,7 @@ function getStyles(theme: GrafanaTheme2) {
       padding: `${theme.spacing(0.25)} ${theme.spacing(0.5)}`,
       borderRadius: theme.shape.radius.default,
       backgroundColor: theme.colors.background.secondary,
-      minHeight: '32px',
+      minHeight: '28px',
     }),
     tagName: css({
       flex: 1,
@@ -141,18 +125,6 @@ function getStyles(theme: GrafanaTheme2) {
     unit: css({
       fontSize: theme.typography.bodySmall.fontSize,
       color: theme.colors.text.secondary,
-      flexShrink: 0,
-    }),
-    range: css({
-      fontSize: theme.typography.bodySmall.fontSize,
-      color: theme.colors.text.disabled,
-      flexShrink: 0,
-    }),
-    typeBadge: css({
-      flexShrink: 0,
-      transform: 'scale(0.85)',
-    }),
-    label: css({
       flexShrink: 0,
     }),
     emptyState: css({

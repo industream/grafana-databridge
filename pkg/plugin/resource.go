@@ -183,16 +183,31 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 		return
 	}
 
-	// Build a set of valid entry IDs when sourceConnectionId is configured.
+	// Build a mapping from non-DataBridge entry IDs to their DataBridge equivalents (same name).
+	// This allows asset trees that reference MQTT/OPC-UA entries to resolve to queryable DataBridge entries.
+	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
+	var entryIdRemap map[string]string // non-DB entry ID → DataBridge entry ID
 	var validEntryIds map[string]bool
-	if d.settings.SourceConnectionId != "" {
-		entries, err := d.catalogClient.ListEntries(ctx, "", "")
-		if err == nil {
-			validEntryIds = make(map[string]bool)
-			for _, e := range entries {
-				if e.GetSourceConnectionID() == d.settings.SourceConnectionId {
-					validEntryIds[e.ID] = true
+	if err == nil {
+		// Index DataBridge entries by name
+		dbByName := make(map[string]string)
+		for _, e := range allEntries {
+			if e.IsDataBridgeEntry() {
+				if d.settings.SourceConnectionId != "" && e.GetSourceConnectionID() != d.settings.SourceConnectionId {
+					continue
 				}
+				dbByName[e.Name] = e.ID
+			}
+		}
+		// Build remap: for non-DataBridge entries, find matching DataBridge entry by name
+		entryIdRemap = make(map[string]string)
+		validEntryIds = make(map[string]bool)
+		for _, e := range allEntries {
+			if e.IsDataBridgeEntry() {
+				validEntryIds[e.ID] = true
+			} else if dbId, ok := dbByName[e.Name]; ok {
+				entryIdRemap[e.ID] = dbId
+				validEntryIds[dbId] = true
 			}
 		}
 	}
@@ -204,26 +219,34 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 			continue
 		}
 		trees[i].Nodes = buildNodeTree(flatNodes)
-		if validEntryIds != nil {
-			filterTreeEntryIds(trees[i].Nodes, validEntryIds)
+		if entryIdRemap != nil {
+			remapTreeEntryIds(trees[i].Nodes, entryIdRemap, validEntryIds)
 		}
 	}
 	d.assetCache.Set("all", trees)
 }
 
-// filterTreeEntryIds removes entry IDs that are not in validIds and updates entryCount.
-func filterTreeEntryIds(nodes []datacatalog.AssetNode, validIds map[string]bool) {
+// remapTreeEntryIds replaces non-DataBridge entry IDs with their DataBridge equivalents
+// and removes entries that have no DataBridge counterpart.
+func remapTreeEntryIds(nodes []datacatalog.AssetNode, remap map[string]string, validIds map[string]bool) {
 	for i := range nodes {
-		filtered := make([]string, 0)
+		seen := make(map[string]bool)
+		remapped := make([]string, 0, len(nodes[i].EntryIds))
 		for _, id := range nodes[i].EntryIds {
-			if validIds[id] {
-				filtered = append(filtered, id)
+			// Remap non-DataBridge IDs to their DataBridge counterpart
+			if newId, ok := remap[id]; ok {
+				id = newId
+			}
+			// Only keep valid (DataBridge) entries, deduplicate
+			if validIds[id] && !seen[id] {
+				remapped = append(remapped, id)
+				seen[id] = true
 			}
 		}
-		nodes[i].EntryIds = filtered
-		nodes[i].EntryCount = len(filtered)
+		nodes[i].EntryIds = remapped
+		nodes[i].EntryCount = len(remapped)
 		if len(nodes[i].Children) > 0 {
-			filterTreeEntryIds(nodes[i].Children, validIds)
+			remapTreeEntryIds(nodes[i].Children, remap, validIds)
 		}
 	}
 }
@@ -331,18 +354,22 @@ func findInNodes(nodes []datacatalog.AssetNode, nodeId string) []string {
 	return nil
 }
 
-// filterEntriesByConnection filters entries to only include those matching the configured sourceConnectionId.
-// If no sourceConnectionId is configured, all entries are returned.
+// filterEntriesByConnection filters entries to only include queryable DataBridge entries.
+// Non-DataBridge entries (MQTT, OPC-UA, etc.) are always excluded since they cannot be queried.
+// If sourceConnectionId is configured, entries are further filtered to that specific connection.
 func (d *Datasource) filterEntriesByConnection(entries []datacatalog.CatalogEntry) []datacatalog.CatalogEntry {
 	connId := d.settings.SourceConnectionId
-	if connId == "" {
-		return entries
-	}
 	filtered := make([]datacatalog.CatalogEntry, 0, len(entries))
 	for _, e := range entries {
-		if e.GetSourceConnectionID() == connId {
-			filtered = append(filtered, e)
+		// Only include entries with a DataBridge source connection
+		if !e.IsDataBridgeEntry() {
+			continue
 		}
+		// If a specific connection is configured, further filter
+		if connId != "" && e.GetSourceConnectionID() != connId {
+			continue
+		}
+		filtered = append(filtered, e)
 	}
 	return filtered
 }

@@ -9,26 +9,30 @@ import (
 )
 
 // CheckHealth verifies connectivity to the DataCatalog and all DataBridge connections.
+// DataCatalog is required; individual DataBridge failures are reported as warnings.
 func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	var errors []string
-	var details []string
+	var criticalErrors []string
+	var lines []string
 
 	// Check DataCatalog connectivity (required)
 	if d.catalogClient == nil {
-		errors = append(errors, "DataCatalog API URL is not configured")
+		criticalErrors = append(criticalErrors, "DataCatalog API URL is not configured")
 	} else if err := d.catalogClient.Ping(ctx); err != nil {
-		errors = append(errors, fmt.Sprintf("DataCatalog: %v", err))
+		criticalErrors = append(criticalErrors, fmt.Sprintf("DataCatalog: %v", err))
 	} else {
-		details = append(details, "DataCatalog connected")
+		lines = append(lines, "✅ DataCatalog connected")
 	}
 
 	// Check DataBridge connectivity via source connections
+	hasWarnings := false
 	if d.catalogClient != nil {
 		conns, err := d.getConnections(ctx)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("Failed to list connections: %v", err))
+			lines = append(lines, fmt.Sprintf("❌ Failed to list connections: %v", err))
+			hasWarnings = true
 		} else if len(conns) == 0 {
-			errors = append(errors, "No source connections found in DataCatalog")
+			lines = append(lines, "⚠️ No source connections found in DataCatalog")
+			hasWarnings = true
 		} else {
 			for _, c := range conns {
 				if c.URL == "" {
@@ -36,9 +40,10 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 				}
 				client := d.dataBridgeClient(c.URL)
 				if err := client.Ping(ctx); err != nil {
-					errors = append(errors, fmt.Sprintf("DataBridge %s (%s): %v", c.Name, c.URL, err))
+					lines = append(lines, fmt.Sprintf("❌ %s — %v", c.Name, err))
+					hasWarnings = true
 				} else {
-					details = append(details, fmt.Sprintf("DataBridge %s OK", c.Name))
+					lines = append(lines, fmt.Sprintf("✅ %s", c.Name))
 				}
 			}
 		}
@@ -51,15 +56,25 @@ func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRe
 	d.assetCache.Clear()
 	d.assetPathCache.Clear()
 
-	if len(errors) > 0 {
+	// DataCatalog down = error
+	if len(criticalErrors) > 0 {
 		return &backend.CheckHealthResult{
 			Status:  backend.HealthStatusError,
-			Message: strings.Join(errors, "; "),
+			Message: strings.Join(criticalErrors, "\n"),
+		}, nil
+	}
+
+	message := strings.Join(lines, "\n")
+
+	if hasWarnings {
+		return &backend.CheckHealthResult{
+			Status:  backend.HealthStatusOk,
+			Message: message,
 		}, nil
 	}
 
 	return &backend.CheckHealthResult{
 		Status:  backend.HealthStatusOk,
-		Message: strings.Join(details, ", "),
+		Message: message,
 	}, nil
 }

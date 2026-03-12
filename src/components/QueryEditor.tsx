@@ -465,11 +465,11 @@ function getStyles(theme: GrafanaTheme2) {
       minHeight: '200px',
     }),
     treePanel: css({
-      flex: 1,
+      flex: 3,
       minWidth: 0,
     }),
     selectedPanel: css({
-      flex: 1,
+      flex: 2,
       minWidth: 0,
     }),
   };

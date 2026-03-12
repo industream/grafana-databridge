@@ -76,12 +76,13 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
           return;
         }
 
-        // Check if any request failed
+        // Check which requests failed
         const failures = [treesResult, labelsResult, entriesResult].filter(
           (r): r is PromiseRejectedResult => r.status === 'rejected'
         );
 
-        if (failures.length > 0) {
+        // All 3 failed = DataCatalog is likely unreachable
+        if (failures.length === 3) {
           const reason = failures[0].reason;
           const detail = reason?.data?.error ?? reason?.data?.message ?? reason?.message ?? '';
           const isUnreachable = detail.includes('dial tcp') || detail.includes('connection refused')
@@ -95,9 +96,36 @@ export function useAssetTree(datasource: DataSource): UseAssetTreeResult {
           return;
         }
 
-        setTrees((treesResult as PromiseFulfilledResult<AssetTree[]>).value ?? []);
-        setLabels((labelsResult as PromiseFulfilledResult<Label[]>).value ?? []);
-        setAllEntries((entriesResult as PromiseFulfilledResult<CatalogEntry[]>).value ?? []);
+        // Partial failures: use what succeeded, show warning for what failed
+        const warningParts: string[] = [];
+
+        if (treesResult.status === 'fulfilled') {
+          const loadedTrees = treesResult.value ?? [];
+          setTrees(loadedTrees);
+          // Auto-select first tree if none selected
+          if (loadedTrees.length > 0) {
+            setSelectedTreeId((prev) => prev ?? loadedTrees[0].id);
+          }
+        } else {
+          warningParts.push('Asset tree failed to load');
+        }
+
+        if (labelsResult.status === 'fulfilled') {
+          setLabels(labelsResult.value ?? []);
+        } else {
+          warningParts.push('Labels failed to load');
+        }
+
+        if (entriesResult.status === 'fulfilled') {
+          setAllEntries(entriesResult.value ?? []);
+        } else {
+          warningParts.push('Catalog entries failed to load');
+        }
+
+        if (warningParts.length > 0) {
+          setError('⚠ ' + warningParts.join(', ') + '. Some data sources may be unavailable.');
+        }
+
         setLoading(false);
       });
 

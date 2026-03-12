@@ -1,19 +1,24 @@
 package displayname
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/industream/industream-data-bridge/pkg/datacatalog"
 )
 
 func makeEntry(name, tagLevel1 string, descriptions map[string]string) *datacatalog.CatalogEntry {
+	var descRaw json.RawMessage
+	if descriptions != nil {
+		descRaw, _ = json.Marshal(descriptions)
+	}
 	return &datacatalog.CatalogEntry{
 		ID:   "test-id",
 		Name: name,
 		Metadata: &datacatalog.CatalogMetadata{
-			TagLevel1:   tagLevel1,
-			Description: descriptions,
-			Unit:        "degC",
+			TagLevel1:      tagLevel1,
+			DescriptionRaw: descRaw,
+			Unit:           "degC",
 		},
 		Labels: []datacatalog.Label{{ID: "test-label", Name: "analog"}},
 	}

@@ -102,6 +102,55 @@ func (d *Datasource) resolveConnectionUrl(ctx context.Context, connectionId stri
 	return d.settings.DataBridgeApiUrl, nil
 }
 
+// remapToDataBridge replaces non-DataBridge entries with their DataBridge counterparts (matched by name).
+// Returns the updated entries and a map of old ID → new ID for entries that were remapped.
+func (d *Datasource) remapToDataBridge(ctx context.Context, entries []datacatalog.CatalogEntry) ([]datacatalog.CatalogEntry, map[string]string) {
+	// Check if any entries need remapping
+	needsRemap := false
+	for _, e := range entries {
+		if !e.IsDataBridgeEntry() {
+			needsRemap = true
+			break
+		}
+	}
+	if !needsRemap {
+		return entries, nil
+	}
+
+	// Fetch all entries to find DataBridge counterparts by name
+	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
+	if err != nil {
+		d.logger.Warn("Failed to fetch entries for remap", "error", err)
+		return entries, nil
+	}
+
+	// Index DataBridge entries by name
+	dbByName := make(map[string]*datacatalog.CatalogEntry)
+	for i := range allEntries {
+		if allEntries[i].IsDataBridgeEntry() {
+			dbByName[allEntries[i].Name] = &allEntries[i]
+		}
+	}
+
+	remapped := make(map[string]string)
+	result := make([]datacatalog.CatalogEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDataBridgeEntry() {
+			result = append(result, e)
+			continue
+		}
+		// Find DataBridge counterpart by name
+		if dbEntry, ok := dbByName[e.Name]; ok {
+			remapped[e.ID] = dbEntry.ID
+			result = append(result, *dbEntry)
+			d.logger.Info("Remapped non-DataBridge entry to DataBridge", "name", e.Name, "oldId", e.ID, "newId", dbEntry.ID)
+		} else {
+			d.logger.Warn("No DataBridge counterpart found", "name", e.Name, "id", e.ID)
+		}
+	}
+	return result, remapped
+}
+
 // getConnections returns cached source connections, fetching from DataCatalog if needed.
 func (d *Datasource) getConnections(ctx context.Context) ([]datacatalog.SourceConnection, error) {
 	if conns, ok := d.connectionCache.Get("all"); ok {
