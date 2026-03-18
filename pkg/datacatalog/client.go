@@ -48,6 +48,7 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 	if search != "" {
 		params.Set("search", search)
 	}
+	params.Set("sourceTypes", "DataBridge")
 	params.Set("limit", "1000")
 
 	var resp PaginatedResponse[CatalogEntry]
