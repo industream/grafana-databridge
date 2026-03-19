@@ -58,30 +58,23 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 	return resp.Items, nil
 }
 
-// GetEntriesByIds fetches catalog entries by their IDs.
-// The DataCatalog API does not support filtering by IDs, so we fetch all and filter client-side.
+// GetEntriesByIds fetches catalog entries by their IDs, filtered to DataBridge bindings only.
 func (c *Client) GetEntriesByIds(ctx context.Context, ids []string) ([]CatalogEntry, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
-	all, err := c.ListEntries(ctx, "", "")
-	if err != nil {
+	params := url.Values{}
+	params.Set("sourceTypes", "DataBridge")
+	for _, id := range ids {
+		params.Add("ids", id)
+	}
+
+	var resp PaginatedResponse[CatalogEntry]
+	if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {
 		return nil, err
 	}
-
-	idSet := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		idSet[id] = true
-	}
-
-	result := make([]CatalogEntry, 0, len(ids))
-	for _, entry := range all {
-		if idSet[entry.ID] {
-			result = append(result, entry)
-		}
-	}
-	return result, nil
+	return resp.Items, nil
 }
 
 // ListAssetDictionaries returns all asset dictionaries.
