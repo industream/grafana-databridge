@@ -2,13 +2,13 @@ apiVersion: 1
 
 datasources:
   - name: 'Industream DataBridge'
-    type: 'industream-industreamdatabridge-datasource'
+    type: 'industream-databridge-datasource'
     access: proxy
     isDefault: false
     orgId: 1
     version: 1
     editable: true
     jsonData:
-      path: '/resources'
+      dataCatalogApiUrl: 'http://localhost:8010'
     secureJsonData:
-      apiKey: 'api-key'
+      apiKey: 'test-api-key'
