@@ -30,7 +30,7 @@ func NewClient(baseURL string) *Client {
 // ListConnections returns DataBridge source connections from the DataCatalog.
 func (c *Client) ListConnections(ctx context.Context) ([]SourceConnection, error) {
 	params := url.Values{}
-	params.Set("sourceTypeId", "DataBridge")
+	params.Set("sourceTypes", "DataBridge")
 
 	var resp PaginatedResponse[SourceConnection]
 	if err := c.get(ctx, "/source-connections", params, &resp); err != nil {
