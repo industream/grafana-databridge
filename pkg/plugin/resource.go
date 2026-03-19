@@ -180,35 +180,23 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 	trees, err := d.catalogClient.ListAssetDictionaries(ctx)
 	if err != nil {
 		d.logger.Warn("Failed to load asset dictionaries for cache", "error", err)
+		// Cache empty list to prevent repeated failed requests
+		d.assetCache.Set("all", []datacatalog.AssetDictionary{})
 		return
 	}
 
-	// Build a mapping from non-DataBridge entry IDs to their DataBridge equivalents (same name).
-	// This allows asset trees that reference MQTT/OPC-UA entries to resolve to queryable DataBridge entries.
+	// With the parent/binding model, entries have the same ID across bindings (OPC-UA + DataBridge).
+	// ListEntries already filters by sourceTypes=DataBridge, so we use those IDs directly.
+	// No remap needed — asset nodes reference parent entry IDs which work for both bindings.
 	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
-	var entryIdRemap map[string]string // non-DB entry ID → DataBridge entry ID
 	var validEntryIds map[string]bool
 	if err == nil {
-		// Index DataBridge entries by name
-		dbByName := make(map[string]string)
-		for _, e := range allEntries {
-			if e.IsDataBridgeEntry() {
-				if d.settings.SourceConnectionId != "" && e.GetSourceConnectionID() != d.settings.SourceConnectionId {
-					continue
-				}
-				dbByName[e.Name] = e.ID
-			}
-		}
-		// Build remap: for non-DataBridge entries, find matching DataBridge entry by name
-		entryIdRemap = make(map[string]string)
 		validEntryIds = make(map[string]bool)
 		for _, e := range allEntries {
-			if e.IsDataBridgeEntry() {
-				validEntryIds[e.ID] = true
-			} else if dbId, ok := dbByName[e.Name]; ok {
-				entryIdRemap[e.ID] = dbId
-				validEntryIds[dbId] = true
+			if d.settings.SourceConnectionId != "" && e.GetSourceConnectionID() != d.settings.SourceConnectionId {
+				continue
 			}
+			validEntryIds[e.ID] = true
 		}
 	}
 
@@ -219,8 +207,8 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 			continue
 		}
 		trees[i].Nodes = buildNodeTree(flatNodes)
-		if entryIdRemap != nil {
-			remapTreeEntryIds(trees[i].Nodes, entryIdRemap, validEntryIds)
+		if validEntryIds != nil {
+			filterTreeEntryIds(trees[i].Nodes, validEntryIds)
 		}
 	}
 	d.assetCache.Set("all", trees)
@@ -228,25 +216,19 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 
 // remapTreeEntryIds replaces non-DataBridge entry IDs with their DataBridge equivalents
 // and removes entries that have no DataBridge counterpart.
-func remapTreeEntryIds(nodes []datacatalog.AssetNode, remap map[string]string, validIds map[string]bool) {
+// filterTreeEntryIds keeps only entry IDs that are valid DataBridge entries.
+func filterTreeEntryIds(nodes []datacatalog.AssetNode, validIds map[string]bool) {
 	for i := range nodes {
-		seen := make(map[string]bool)
-		remapped := make([]string, 0, len(nodes[i].EntryIds))
+		filtered := make([]string, 0, len(nodes[i].EntryIds))
 		for _, id := range nodes[i].EntryIds {
-			// Remap non-DataBridge IDs to their DataBridge counterpart
-			if newId, ok := remap[id]; ok {
-				id = newId
-			}
-			// Only keep valid (DataBridge) entries, deduplicate
-			if validIds[id] && !seen[id] {
-				remapped = append(remapped, id)
-				seen[id] = true
+			if validIds[id] {
+				filtered = append(filtered, id)
 			}
 		}
-		nodes[i].EntryIds = remapped
-		nodes[i].EntryCount = len(remapped)
+		nodes[i].EntryIds = filtered
+		nodes[i].EntryCount = len(filtered)
 		if len(nodes[i].Children) > 0 {
-			remapTreeEntryIds(nodes[i].Children, remap, validIds)
+			filterTreeEntryIds(nodes[i].Children, validIds)
 		}
 	}
 }
