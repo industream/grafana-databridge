@@ -66,7 +66,8 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
   }
 
   filterQuery(query: DataBridgeQuery): boolean {
-    if (query.mode === 'dataCatalog') {
+    const mode = query.mode ?? 'dataCatalog';
+    if (mode === 'dataCatalog') {
       return (query.catalogEntryIds?.length ?? 0) > 0 || (query.select?.length ?? 0) > 0;
     }
     return !!query.connectionId && !!query.databaseName && !!query.datasetName;

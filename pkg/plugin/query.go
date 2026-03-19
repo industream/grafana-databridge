@@ -36,13 +36,18 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 	}
 	qd.ParseWhere()
 
-	switch qd.Mode {
+	mode := qd.Mode
+	if mode == "" {
+		mode = "dataCatalog"
+	}
+
+	switch mode {
 	case "raw":
 		return d.handleRawQuery(ctx, query, &qd)
 	case "dataCatalog":
 		return d.handleCatalogQuery(ctx, query, &qd)
 	default:
-		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("unknown mode: %s", qd.Mode))
+		return backend.ErrDataResponse(backend.StatusBadRequest, fmt.Sprintf("unknown mode: %s", mode))
 	}
 }
 
