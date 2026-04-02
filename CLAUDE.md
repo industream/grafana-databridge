@@ -20,6 +20,18 @@ This repository contains a **Grafana plugin**. You must Read @./.config/AGENTS/i
   - `pkg/displayname/` — Display name pattern resolver
   - `pkg/models/` — Shared types (settings, query definition)
 
+## RISK CLASSIFICATION
+- **LOW** (proceed): Read files, go test, grep, lint.
+- **MEDIUM** (log and proceed): Modify Go/React source, install dependencies.
+- **HIGH** (confirm first): mage build (plugin binary), modify plugin.json, push to Grafana marketplace.
+
+## NEVER
+- Never modify anything inside `.config/` — managed by Grafana plugin tools.
+- Never change `pluginId` or `type` in `plugin.json`.
+- Never use deprecated `Select` — use `Combobox` from `@grafana/ui` v12.4+.
+- Never store credentials in `jsonData` — use `secureJsonData`.
+- Never skip `mage` for Go builds or `webpack` for frontend builds.
+
 ### Key Rules
 
 - Do NOT modify `.config/` folder (managed by Grafana plugin tools)
