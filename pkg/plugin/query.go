@@ -374,7 +374,10 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 
 	// Build GROUP BY with time_window for optimize display
 	if qd.OptimizeDisplay && maxDataPoints > 0 {
-		windowSeconds := computeTimeWindow(timeRange, maxDataPoints)
+		windowSeconds := int64(qd.TimeWindowSeconds)
+		if windowSeconds <= 0 {
+			windowSeconds = computeTimeWindow(timeRange, maxDataPoints)
+		}
 		if windowSeconds > 0 {
 			isoDuration := formatISODuration(time.Duration(windowSeconds) * time.Second)
 			twParams := []databridge.QueryParam{

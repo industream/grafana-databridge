@@ -20,6 +20,7 @@ interface RowEstimateParams {
   maxDataPoints: number;
   maxRawRows: number;
   hardLimitRows: number;
+  manualTimeWindowSeconds?: number;
 }
 
 const BYTES_PER_CELL = 16;
@@ -33,6 +34,7 @@ export function useRowEstimate({
   maxDataPoints,
   maxRawRows,
   hardLimitRows,
+  manualTimeWindowSeconds,
 }: RowEstimateParams): RowEstimate | null {
   return useMemo(() => {
     if (!timeRange || columnCount === 0) {
@@ -46,8 +48,10 @@ export function useRowEstimate({
     const rawRowsPerSeries = Math.ceil(rangeSeconds / DEFAULT_INTERVAL_SECONDS);
     const estimatedRows = rawRowsPerSeries * columnCount;
 
-    // Optimized estimate
-    const windowSeconds = computeNiceWindow(rangeSeconds, maxDataPoints || 1000);
+    // Optimized estimate: use manual window if set, otherwise auto-compute
+    const windowSeconds = (manualTimeWindowSeconds && manualTimeWindowSeconds > 0)
+      ? manualTimeWindowSeconds
+      : computeNiceWindow(rangeSeconds, maxDataPoints || 1000);
     const optimizedRowsPerSeries = Math.ceil(rangeSeconds / windowSeconds);
     const optimizedRows = optimizedRowsPerSeries * columnCount;
 
@@ -81,7 +85,7 @@ export function useRowEstimate({
       optimizedRows,
       optimizedSizeBytes,
     };
-  }, [timeRange, columnCount, optimizeDisplay, maxDataPoints, maxRawRows, hardLimitRows]);
+  }, [timeRange, columnCount, optimizeDisplay, maxDataPoints, maxRawRows, hardLimitRows, manualTimeWindowSeconds]);
 }
 
 function computeNiceWindow(rangeSeconds: number, maxDataPoints: number): number {

@@ -95,6 +95,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     maxDataPoints: 1000, // Grafana typical panel width
     maxRawRows,
     hardLimitRows,
+    manualTimeWindowSeconds: query.timeWindowSeconds,
   });
 
   const updateQuery = useCallback(
@@ -417,6 +418,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         onUpdate={updateQuery}
         onUpdateAndRun={updateAndRun}
         isMultiDataset={isMultiDataset}
+        optimizeDisplay={optimizeDisplay}
       />
 
       {/* Display name configuration (collapsible) */}

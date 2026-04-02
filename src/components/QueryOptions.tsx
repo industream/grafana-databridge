@@ -18,7 +18,23 @@ interface QueryOptionsProps {
   onUpdate: (patch: Partial<DataBridgeQuery>) => void;
   onUpdateAndRun: (patch: Partial<DataBridgeQuery>) => void;
   isMultiDataset?: boolean;
+  optimizeDisplay?: boolean;
 }
+
+const TIME_WINDOW_OPTIONS = [
+  { label: 'Auto', value: '0' },
+  { label: '1s', value: '1' },
+  { label: '5s', value: '5' },
+  { label: '10s', value: '10' },
+  { label: '30s', value: '30' },
+  { label: '1m', value: '60' },
+  { label: '5m', value: '300' },
+  { label: '15m', value: '900' },
+  { label: '30m', value: '1800' },
+  { label: '1h', value: '3600' },
+  { label: '6h', value: '21600' },
+  { label: '1d', value: '86400' },
+];
 
 
 function countConditions(filter?: FilterDefinition): number {
@@ -31,7 +47,7 @@ function countConditions(filter?: FilterDefinition): number {
   return 1;
 }
 
-export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset }: QueryOptionsProps) {
+export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset, optimizeDisplay }: QueryOptionsProps) {
   const styles = useStyles2(getStyles);
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -43,6 +59,20 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset }
 
   return (
     <div className={styles.container}>
+      {/* Time Window — visible only when aggregation is active */}
+      {optimizeDisplay && (
+        <InlineFieldRow>
+          <InlineField label="Time Window" labelWidth={16} tooltip="Bucket size for aggregation. Auto computes from time range and panel width.">
+            <Combobox
+              options={TIME_WINDOW_OPTIONS}
+              value={String(query.timeWindowSeconds ?? 0)}
+              onChange={(option) => onUpdateAndRun({ timeWindowSeconds: Number(option.value) })}
+              width={16}
+            />
+          </InlineField>
+        </InlineFieldRow>
+      )}
+
       {/* Filters (WHERE) — collapsible, disabled when tags span multiple datasets */}
       <div className={isMultiDataset ? styles.disabledSection : undefined}>
         <Collapse
