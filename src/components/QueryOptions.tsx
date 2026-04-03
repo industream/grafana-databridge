@@ -10,6 +10,7 @@ import {
   FilterCondition,
   ComparisonOperator,
   LogicalOperator,
+  TimeWindowUnit,
   isFilterGroup,
 } from '../types';
 
@@ -21,19 +22,20 @@ interface QueryOptionsProps {
   optimizeDisplay?: boolean;
 }
 
-const TIME_WINDOW_OPTIONS = [
+const TIME_WINDOW_INTERVAL_OPTIONS = [
   { label: 'Auto', value: '0' },
-  { label: '1s', value: '1' },
-  { label: '5s', value: '5' },
-  { label: '10s', value: '10' },
-  { label: '30s', value: '30' },
-  { label: '1m', value: '60' },
-  { label: '5m', value: '300' },
-  { label: '15m', value: '900' },
-  { label: '30m', value: '1800' },
-  { label: '1h', value: '3600' },
-  { label: '6h', value: '21600' },
-  { label: '1d', value: '86400' },
+  { label: '1', value: '1' },
+  { label: '5', value: '5' },
+  { label: '10', value: '10' },
+  { label: '15', value: '15' },
+  { label: '30', value: '30' },
+];
+
+const TIME_WINDOW_UNIT_OPTIONS = [
+  { label: 'seconds', value: 's' },
+  { label: 'minutes', value: 'm' },
+  { label: 'hours', value: 'h' },
+  { label: 'days', value: 'd' },
 ];
 
 
@@ -64,12 +66,29 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset, 
         <InlineFieldRow>
           <InlineField label="Time Window" labelWidth={16} tooltip="Bucket size for aggregation. Auto computes from time range and panel width.">
             <Combobox
-              options={TIME_WINDOW_OPTIONS}
-              value={String(query.timeWindowSeconds ?? 0)}
-              onChange={(option) => onUpdateAndRun({ timeWindowSeconds: Number(option.value) })}
-              width={16}
+              options={TIME_WINDOW_INTERVAL_OPTIONS}
+              value={String(query.timeWindowInterval ?? 0)}
+              onChange={(option) => {
+                const interval = Number(option.value);
+                if (interval === 0) {
+                  onUpdateAndRun({ timeWindowInterval: 0, timeWindowUnit: undefined });
+                } else {
+                  onUpdateAndRun({ timeWindowInterval: interval, timeWindowUnit: query.timeWindowUnit ?? 's' });
+                }
+              }}
+              width={10}
             />
           </InlineField>
+          {(query.timeWindowInterval ?? 0) > 0 && (
+            <InlineField>
+              <Combobox
+                options={TIME_WINDOW_UNIT_OPTIONS}
+                value={query.timeWindowUnit ?? 's'}
+                onChange={(option) => onUpdateAndRun({ timeWindowUnit: option.value as TimeWindowUnit })}
+                width={14}
+              />
+            </InlineField>
+          )}
         </InlineFieldRow>
       )}
 

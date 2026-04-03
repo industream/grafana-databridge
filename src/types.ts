@@ -23,6 +23,22 @@ export type AggregationOrNone = AggregationFunction | 'none';
 
 export type TagOperation = AggregationFunction | 'optimized' | 'none';
 
+export type TimeWindowUnit = 's' | 'm' | 'h' | 'd';
+
+const TIME_WINDOW_UNIT_SECONDS: Record<TimeWindowUnit, number> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+};
+
+export function timeWindowToSeconds(interval?: number, unit?: TimeWindowUnit): number {
+  if (!interval || interval <= 0 || !unit) {
+    return 0;
+  }
+  return interval * TIME_WINDOW_UNIT_SECONDS[unit];
+}
+
 export type DisplayNamePreset =
   | 'entryName'
   | 'tagLevel1'
@@ -86,7 +102,8 @@ export interface DataBridgeQuery extends DataQuery {
 
   // Aggregation / time window
   aggregation?: AggregationFunction;
-  timeWindowSeconds?: number;
+  timeWindowInterval?: number;
+  timeWindowUnit?: TimeWindowUnit;
 
   // Pagination
   limit?: number;

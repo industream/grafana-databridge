@@ -15,7 +15,8 @@ type QueryDefinition struct {
 	Where             *FilterDefinition  `json:"-"` // custom unmarshal
 	WhereRaw          json.RawMessage    `json:"where,omitempty"`
 	Aggregation       string             `json:"aggregation,omitempty"`
-	TimeWindowSeconds int                `json:"timeWindowSeconds,omitempty"`
+	TimeWindowInterval int               `json:"timeWindowInterval,omitempty"`
+	TimeWindowUnit     string            `json:"timeWindowUnit,omitempty"`
 	Limit             int                `json:"limit,omitempty"`
 	Offset            int                `json:"offset,omitempty"`
 	OrderByColumn     string             `json:"orderByColumn,omitempty"`

@@ -17,6 +17,7 @@ import {
   SelectDefinition,
   SourceConnection,
   TagOperation,
+  timeWindowToSeconds,
 } from '../types';
 import { useAssetTree } from '../hooks/useAssetTree';
 import { useRowEstimate } from '../hooks/useRowEstimate';
@@ -95,7 +96,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
     maxDataPoints: 1000, // Grafana typical panel width
     maxRawRows,
     hardLimitRows,
-    manualTimeWindowSeconds: query.timeWindowSeconds,
+    manualTimeWindowSeconds: timeWindowToSeconds(query.timeWindowInterval, query.timeWindowUnit),
   });
 
   const updateQuery = useCallback(

@@ -374,7 +374,7 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 
 	// Build GROUP BY with time_window for optimize display
 	if qd.OptimizeDisplay && maxDataPoints > 0 {
-		windowSeconds := int64(qd.TimeWindowSeconds)
+		windowSeconds := timeWindowToSeconds(qd.TimeWindowInterval, qd.TimeWindowUnit)
 		if windowSeconds <= 0 {
 			windowSeconds = computeTimeWindow(timeRange, maxDataPoints)
 		}
@@ -460,6 +460,25 @@ func convertFilter(f *models.FilterDefinition) *databridge.WhereExpression {
 		Operator: mapOperator(f.Operator),
 		Left:     &databridge.WhereOperand{Column: f.Column},
 		Right:    &databridge.WhereOperand{Constant: f.Value},
+	}
+}
+
+// timeWindowToSeconds converts an interval + unit pair to seconds.
+func timeWindowToSeconds(interval int, unit string) int64 {
+	if interval <= 0 {
+		return 0
+	}
+	switch unit {
+	case "s":
+		return int64(interval)
+	case "m":
+		return int64(interval) * 60
+	case "h":
+		return int64(interval) * 3600
+	case "d":
+		return int64(interval) * 86400
+	default:
+		return 0
 	}
 }
 
