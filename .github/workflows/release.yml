@@ -9,6 +9,14 @@ on:
 
 permissions: read-all
 
+# Opt into Node.js 24 runtime for nested actions. Without this, the
+# transitive actions inside grafana/plugin-actions (actions/setup-go,
+# magefile/mage-action) emit a deprecation warning about running on
+# Node 20. Once their authors publish Node-24 versions, this can be
+# removed.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   release:
     permissions:
