@@ -20,10 +20,15 @@ jobs:
           persist-credentials: false
 
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.0.2
+        with:
+          # go.mod requires Go >= 1.25.7; the action's default is too old.
+          # v1.1.0 failed with:
+          #   go: go.mod requires go >= 1.25.7 (running go 1.21.13; GOTOOLCHAIN=local)
+          # Bump together with go.mod.
+          go-version: "1.25"
         # Uncomment to enable plugin signing
         # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
-        #with:
-        # Make sure to save the token in your repository secrets
-        #policy_token: $
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        #grafana_token: $
+        #  # Make sure to save the token in your repository secrets
+        #  policy_token: $
+        #  # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
+        #  grafana_token: $
