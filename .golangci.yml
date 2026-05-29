@@ -1,25 +1,15 @@
-# golangci-lint config — see https://golangci-lint.run/usage/configuration/
+# golangci-lint v2 config — keep the lint step from traversing into
+# `node_modules`. Some npm packages (notably `flatted`) ship Go source
+# files for their own internal build pipeline, and `go list ./...`
+# happily picks them up. Those files fail govet, breaking release CI
+# even though they have nothing to do with our plugin code.
 #
-# Exists to keep the lint step from traversing into `node_modules`. Some npm
-# packages (notably `flatted`) ship Go source files for their own internal
-# build pipeline, and `go list ./...` happily picks them up. Those files
-# fail govet's modern checks (e.g. `inline: Constant reflect.Ptr should be
-# inlined`), breaking our release CI even though they have nothing to do
-# with our plugin code.
-
+# See https://golangci-lint.run/usage/configuration/ for the full schema.
 version: "2"
 
-run:
-  # Modern (v2) field — replaces the deprecated top-level skip-dirs.
-  build-tags: []
-
-issues:
-  exclude-dirs:
-    - node_modules
-    - .config
-    - dist
-  exclude-dirs-use-default: true
-
 linters:
-  # Defaults are fine; we just want the path filter above.
-  default: standard
+  exclusions:
+    paths:
+      - node_modules
+      - dist
+      - \.config
