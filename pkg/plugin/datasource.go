@@ -55,7 +55,7 @@ func NewDatasource(_ context.Context, settings backend.DataSourceInstanceSetting
 	}
 
 	if pluginSettings.DataCatalogApiUrl != "" {
-		ds.catalogClient = datacatalog.NewClient(pluginSettings.DataCatalogApiUrl)
+		ds.catalogClient = datacatalog.NewClient(pluginSettings.DataCatalogApiUrl, pluginSettings.Secrets.ApiKey)
 	}
 
 	return ds, nil

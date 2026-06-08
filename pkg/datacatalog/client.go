@@ -14,13 +14,16 @@ import (
 // Client communicates with the DataCatalog REST API.
 type Client struct {
 	baseURL    string
+	apiKey     string
 	httpClient *http.Client
 }
 
-// NewClient creates a DataCatalog client with the given base URL.
-func NewClient(baseURL string) *Client {
+// NewClient creates a DataCatalog client with the given base URL. apiKey, when
+// non-empty, is sent as the X-Api-Key header (DataCatalog backend port auth).
+func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -135,6 +138,12 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
+	// DataCatalog's backend port (8003) authenticates via X-Api-Key. Sent only
+	// when configured (datasource secureJsonData.apiKey); empty = no header, so
+	// an un-authenticated DataCatalog still works.
+	if c.apiKey != "" {
+		req.Header.Set("X-Api-Key", c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
