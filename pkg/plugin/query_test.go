@@ -6,6 +6,7 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 
+	"github.com/industream/industream-data-bridge/pkg/databridge"
 	"github.com/industream/industream-data-bridge/pkg/models"
 )
 
@@ -145,6 +146,93 @@ func TestBuildRecordsQuery_RawMode(t *testing.T) {
 	}
 	if rq.Select[0].Column != "temperature" {
 		t.Errorf("expected column 'temperature', got %s", rq.Select[0].Column)
+	}
+}
+
+func TestBuildRecordsQuery_TransformsForwarded(t *testing.T) {
+	qd := &models.QueryDefinition{
+		Mode:     "raw",
+		Strategy: "timeseries",
+		Select: []models.SelectDefinition{
+			{Column: "temperature"},
+		},
+		Transforms: []databridge.Transform{
+			{MovingAverage: &databridge.MovingAverageParams{Window: 5}},
+			{CumulativeSum: &databridge.CumulativeSumParams{}},
+		},
+	}
+
+	now := time.Now()
+	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
+
+	rq := buildRecordsQuery(qd, tr, 1000)
+
+	if len(rq.Transforms) != 2 {
+		t.Fatalf("expected 2 transforms forwarded, got %d", len(rq.Transforms))
+	}
+	if rq.Transforms[0].MovingAverage == nil || rq.Transforms[0].MovingAverage.Window != 5 {
+		t.Errorf("expected movingAverage window 5, got %+v", rq.Transforms[0])
+	}
+	if rq.Transforms[1].CumulativeSum == nil {
+		t.Errorf("expected cumulativeSum transform, got %+v", rq.Transforms[1])
+	}
+}
+
+func TestBuildRecordsQuery_ResampleSuppressesTimeWindow(t *testing.T) {
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "timeseries",
+		OptimizeDisplay: true, // would normally inject time_window
+		Select: []models.SelectDefinition{
+			{Column: "temperature", Aggregation: "avg"},
+		},
+		Transforms: []databridge.Transform{
+			{Resample: &databridge.ResampleParams{Every: "PT1M", Aggregation: "mean"}},
+		},
+	}
+
+	now := time.Now()
+	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
+
+	rq := buildRecordsQuery(qd, tr, 1000)
+
+	// No auto time_window in SELECT when a resample is configured.
+	for _, s := range rq.Select {
+		if s.Function == "time_window" {
+			t.Errorf("expected no time_window in SELECT when resample configured, got %+v", rq.Select)
+		}
+	}
+	// No time_window GROUP BY either.
+	if len(rq.GroupBy) != 0 {
+		t.Errorf("expected no GROUP BY when resample configured, got %+v", rq.GroupBy)
+	}
+	// Resample transform is forwarded.
+	if len(rq.Transforms) != 1 || rq.Transforms[0].Resample == nil {
+		t.Fatalf("expected resample transform forwarded, got %+v", rq.Transforms)
+	}
+}
+
+func TestBuildRecordsQuery_NoResampleKeepsTimeWindow(t *testing.T) {
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "timeseries",
+		OptimizeDisplay: true,
+		Select: []models.SelectDefinition{
+			{Column: "temperature", Aggregation: "avg"},
+		},
+		Transforms: []databridge.Transform{
+			{Fill: &databridge.FillParams{Method: "linear"}},
+		},
+	}
+
+	now := time.Now()
+	tr := backend.TimeRange{From: now.Add(-time.Hour), To: now}
+
+	rq := buildRecordsQuery(qd, tr, 1000)
+
+	// time_window must still be injected (regression guard) when no resample.
+	if len(rq.GroupBy) != 1 || rq.GroupBy[0].Function != "time_window" {
+		t.Errorf("expected time_window GROUP BY without resample, got %+v", rq.GroupBy)
 	}
 }
 

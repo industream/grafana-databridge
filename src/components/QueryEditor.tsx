@@ -27,6 +27,7 @@ import { RawColumnSelector } from './RawColumnSelector';
 import { DisplayNamePicker } from './DisplayNamePicker';
 import { SafetyBanner } from './SafetyBanner';
 import { QueryOptions } from './QueryOptions';
+import { TransformsEditor } from './TransformsEditor';
 
 type Props = QueryEditorProps<DataSource, DataBridgeQuery, DataBridgeOptions>;
 
@@ -421,6 +422,8 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         isMultiDataset={isMultiDataset}
         optimizeDisplay={optimizeDisplay}
       />
+
+      <TransformsEditor query={query} onUpdateAndRun={updateAndRun} />
 
       {/* Display name configuration (collapsible) */}
       <Collapse
