@@ -6,18 +6,32 @@ import { DataQuery } from '@grafana/schema';
 export type QueryMode = 'dataCatalog' | 'raw';
 export type QueryStrategy = 'timeseries' | 'table';
 
+// Mirror of DataBridge KnownFunctions.cs (api-v2.3.0) — the parameterless
+// per-tag aggregations. Keep in sync with the backend's accepted set.
+// (time_window is a windowing function taking a duration arg, not a plain
+// aggregation → excluded here; percentiles live in the ComputeStats/transforms
+// feature, not in KnownFunctions.)
 export type AggregationFunction =
   | 'avg'
+  | 'mean'
   | 'min'
   | 'max'
   | 'sum'
   | 'count'
   | 'first'
   | 'last'
+  | 'first_at'
+  | 'last_at'
+  | 'min_at'
+  | 'max_at'
+  | 'std'
   | 'stddev'
   | 'stddev_pop'
+  | 'stddev_samp'
   | 'var'
-  | 'var_pop';
+  | 'variance'
+  | 'var_pop'
+  | 'var_samp';
 
 export type AggregationOrNone = AggregationFunction | 'none';
 
