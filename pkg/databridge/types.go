@@ -30,12 +30,56 @@ type ColumnInfo struct {
 
 // RecordsQuery is the request body for POST /records/query.
 type RecordsQuery struct {
-	Select  []SelectClause `json:"select,omitempty"`
-	Where   *WhereExpression `json:"where,omitempty"`
-	GroupBy []GroupClause  `json:"groupBy,omitempty"`
-	OrderBy []OrderClause  `json:"orderBy,omitempty"`
-	Limit   int            `json:"limit,omitempty"`
-	Offset  int            `json:"offset,omitempty"`
+	Select     []SelectClause   `json:"select,omitempty"`
+	Where      *WhereExpression `json:"where,omitempty"`
+	GroupBy    []GroupClause    `json:"groupBy,omitempty"`
+	OrderBy    []OrderClause    `json:"orderBy,omitempty"`
+	Limit      int              `json:"limit,omitempty"`
+	Offset     int              `json:"offset,omitempty"`
+	Transforms []Transform      `json:"transforms,omitempty"`
+}
+
+// Transform is a single query-time transform applied by DataBridge after the
+// query, in pipeline order. It uses the wrapper-object shape of the DataBridge
+// API: exactly one field is set per transform (e.g. {"resample": {...}}).
+// Nillable pointers let the backend detect which transform is present.
+type Transform struct {
+	Resample      *ResampleParams      `json:"resample,omitempty"`
+	Fill          *FillParams          `json:"fill,omitempty"`
+	MovingAverage *MovingAverageParams `json:"movingAverage,omitempty"`
+	CumulativeSum *CumulativeSumParams `json:"cumulativeSum,omitempty"`
+	RollingStats  *RollingStatsParams  `json:"rollingStats,omitempty"`
+}
+
+// ResampleParams buckets records into fixed time intervals and aggregates them.
+type ResampleParams struct {
+	Every       string `json:"every"`
+	Aggregation string `json:"aggregation,omitempty"`
+	CreateEmpty bool   `json:"createEmpty,omitempty"`
+	Offset      string `json:"offset,omitempty"`
+}
+
+// FillParams fills gaps in the series. Value is a pointer so a zero fill value
+// is only sent when explicitly set.
+type FillParams struct {
+	Method string   `json:"method,omitempty"`
+	Value  *float64 `json:"value,omitempty"`
+	Limit  int      `json:"limit,omitempty"`
+}
+
+// MovingAverageParams smooths each numeric column over a sliding window.
+type MovingAverageParams struct {
+	Window int `json:"window"`
+}
+
+// CumulativeSumParams accumulates each numeric column. It takes no parameters.
+type CumulativeSumParams struct{}
+
+// RollingStatsParams computes sliding-window statistics per numeric column.
+type RollingStatsParams struct {
+	Window       int      `json:"window"`
+	Stats        []string `json:"stats,omitempty"`
+	OutputSuffix bool     `json:"outputSuffix,omitempty"`
 }
 
 // SelectClause represents a column selection with optional aggregation.
@@ -69,10 +113,10 @@ type OrderClause struct {
 // WhereExpression is a boolean expression tree for the WHERE clause.
 // It can be a logical group (and/or with sub-conditions) or a leaf comparison.
 type WhereExpression struct {
-	Operator   string              `json:"operator"`
-	Conditions []WhereExpression   `json:"conditions,omitempty"`
-	Left       *WhereOperand       `json:"left,omitempty"`
-	Right      *WhereOperand       `json:"right,omitempty"`
+	Operator   string            `json:"operator"`
+	Conditions []WhereExpression `json:"conditions,omitempty"`
+	Left       *WhereOperand     `json:"left,omitempty"`
+	Right      *WhereOperand     `json:"right,omitempty"`
 }
 
 // WhereOperand is either a column reference or a constant value.

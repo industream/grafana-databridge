@@ -12,8 +12,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 
-	"github.com/industream/industream-data-bridge/pkg/datacatalog"
 	"github.com/industream/industream-data-bridge/pkg/databridge"
+	"github.com/industream/industream-data-bridge/pkg/datacatalog"
 	"github.com/industream/industream-data-bridge/pkg/displayname"
 	"github.com/industream/industream-data-bridge/pkg/models"
 )
@@ -319,10 +319,16 @@ func (d *Datasource) applySafetyLimits(qd *models.QueryDefinition, timeRange bac
 	}
 }
 
-
 // buildRecordsQuery constructs the DataBridge API query from the query definition and time range.
 func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, maxDataPoints int64) *databridge.RecordsQuery {
 	rq := &databridge.RecordsQuery{}
+
+	// Forward the query-time transform pipeline as-is (wrapper-object shape).
+	rq.Transforms = qd.Transforms
+
+	// An explicit resample buckets by time itself, so it replaces the automatic
+	// time_window downsampling below to avoid double-aggregation.
+	hasResample := hasResampleTransform(qd.Transforms)
 
 	// Build SELECT clause
 	for _, s := range qd.Select {
@@ -372,8 +378,9 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	// Build WHERE clause with time range
 	rq.Where = buildTimeRangeWhere(timeRange, qd.Where)
 
-	// Build GROUP BY with time_window for optimize display
-	if qd.OptimizeDisplay && maxDataPoints > 0 {
+	// Build GROUP BY with time_window for optimize display, unless an explicit
+	// resample transform already handles time bucketing.
+	if qd.OptimizeDisplay && maxDataPoints > 0 && !hasResample {
 		windowSeconds := timeWindowToSeconds(qd.TimeWindowInterval, qd.TimeWindowUnit)
 		if windowSeconds <= 0 {
 			windowSeconds = computeTimeWindow(timeRange, maxDataPoints)
@@ -415,6 +422,17 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	}
 
 	return rq
+}
+
+// hasResampleTransform reports whether the pipeline contains a resample transform,
+// which buckets by time and thus replaces the automatic time_window downsampling.
+func hasResampleTransform(transforms []databridge.Transform) bool {
+	for i := range transforms {
+		if transforms[i].Resample != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // buildTimeRangeWhere creates a WHERE expression combining the time range with user filters.

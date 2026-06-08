@@ -128,7 +128,60 @@ export interface DataBridgeQuery extends DataQuery {
   // Display
   displayNamePreset?: DisplayNamePreset;
   displayNamePattern?: string;
+
+  // Query-time transform pipeline (DataBridge v2.3.0)
+  transforms?: Transform[];
 }
+
+// --- Query-time transforms (DataBridge v2.3.0) ---
+// Wrapper-object shape: exactly one field set per transform, matching the
+// DataBridge /records/query `transforms` contract. Order = application order.
+
+export interface ResampleParams {
+  every: string;
+  aggregation?: string;
+  createEmpty?: boolean;
+  offset?: string;
+}
+
+export interface FillParams {
+  method?: string;
+  value?: number;
+  limit?: number;
+}
+
+export interface MovingAverageParams {
+  window: number;
+}
+
+export interface RollingStatsParams {
+  window: number;
+  stats?: string[];
+  outputSuffix?: boolean;
+}
+
+export interface Transform {
+  resample?: ResampleParams;
+  fill?: FillParams;
+  movingAverage?: MovingAverageParams;
+  cumulativeSum?: Record<string, never>;
+  rollingStats?: RollingStatsParams;
+}
+
+export type TransformKind = 'resample' | 'fill' | 'movingAverage' | 'cumulativeSum' | 'rollingStats';
+
+// Fixed pipeline order applied by the editor.
+export const TRANSFORM_ORDER: TransformKind[] = [
+  'resample',
+  'fill',
+  'movingAverage',
+  'cumulativeSum',
+  'rollingStats',
+];
+
+export const ROLLING_STATS_OPTIONS = ['mean', 'std', 'min', 'max', 'sum', 'count', 'variance'];
+
+export const FILL_METHOD_OPTIONS = ['linear', 'forward', 'backward', 'value', 'none'];
 
 export const DEFAULT_QUERY: Partial<DataBridgeQuery> = {
   mode: 'dataCatalog',

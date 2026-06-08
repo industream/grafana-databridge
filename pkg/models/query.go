@@ -1,28 +1,35 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/industream/industream-data-bridge/pkg/databridge"
+)
 
 // QueryDefinition represents the JSON query sent from the frontend.
 type QueryDefinition struct {
-	Mode              string             `json:"mode"`
-	Strategy          string             `json:"strategy"`
-	OptimizeDisplay   bool               `json:"optimizeDisplay"`
-	CatalogEntryIds   []string           `json:"catalogEntryIds,omitempty"`
-	ConnectionId      string             `json:"connectionId,omitempty"`
-	DatabaseName      string             `json:"databaseName,omitempty"`
-	DatasetName       string             `json:"datasetName,omitempty"`
-	Select            []SelectDefinition `json:"select"`
-	Where             *FilterDefinition  `json:"-"` // custom unmarshal
-	WhereRaw          json.RawMessage    `json:"where,omitempty"`
-	Aggregation       string             `json:"aggregation,omitempty"`
-	TimeWindowInterval int               `json:"timeWindowInterval,omitempty"`
-	TimeWindowUnit     string            `json:"timeWindowUnit,omitempty"`
-	Limit             int                `json:"limit,omitempty"`
-	Offset            int                `json:"offset,omitempty"`
-	OrderByColumn     string             `json:"orderByColumn,omitempty"`
-	OrderByDirection  string             `json:"orderByDirection,omitempty"`
-	DisplayNamePreset  string            `json:"displayNamePreset,omitempty"`
-	DisplayNamePattern string            `json:"displayNamePattern,omitempty"`
+	Mode               string             `json:"mode"`
+	Strategy           string             `json:"strategy"`
+	OptimizeDisplay    bool               `json:"optimizeDisplay"`
+	CatalogEntryIds    []string           `json:"catalogEntryIds,omitempty"`
+	ConnectionId       string             `json:"connectionId,omitempty"`
+	DatabaseName       string             `json:"databaseName,omitempty"`
+	DatasetName        string             `json:"datasetName,omitempty"`
+	Select             []SelectDefinition `json:"select"`
+	Where              *FilterDefinition  `json:"-"` // custom unmarshal
+	WhereRaw           json.RawMessage    `json:"where,omitempty"`
+	Aggregation        string             `json:"aggregation,omitempty"`
+	TimeWindowInterval int                `json:"timeWindowInterval,omitempty"`
+	TimeWindowUnit     string             `json:"timeWindowUnit,omitempty"`
+	Limit              int                `json:"limit,omitempty"`
+	Offset             int                `json:"offset,omitempty"`
+	OrderByColumn      string             `json:"orderByColumn,omitempty"`
+	OrderByDirection   string             `json:"orderByDirection,omitempty"`
+	DisplayNamePreset  string             `json:"displayNamePreset,omitempty"`
+	DisplayNamePattern string             `json:"displayNamePattern,omitempty"`
+	// Transforms is the query-time transform pipeline, sent by the frontend in the
+	// exact DataBridge wrapper-object shape and forwarded as-is to /records/query.
+	Transforms []databridge.Transform `json:"transforms,omitempty"`
 }
 
 // ParseWhere converts the raw JSON where field into a FilterDefinition.
