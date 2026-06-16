@@ -694,7 +694,7 @@ func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.Quer
 		// Push catalog metadata into Grafana field config (unit, min, max, decimals, thresholds)
 		if entry.Metadata != nil {
 			if entry.Metadata.Unit != "" {
-				fc.Unit = entry.Metadata.Unit
+				fc.Unit = string(entry.Metadata.Unit)
 			}
 			if entry.Metadata.Min.Value != nil {
 				fc.SetMin(*entry.Metadata.Min.Value)
@@ -754,7 +754,7 @@ func buildFieldDescription(entry *datacatalog.CatalogEntry) string {
 	if entry.Metadata != nil && entry.Metadata.Min.Value != nil && entry.Metadata.Max.Value != nil {
 		unit := ""
 		if entry.Metadata.Unit != "" {
-			unit = " " + entry.Metadata.Unit
+			unit = " " + string(entry.Metadata.Unit)
 		}
 		parts = append(parts, fmt.Sprintf("Range: %g – %g%s", *entry.Metadata.Min.Value, *entry.Metadata.Max.Value, unit))
 	}

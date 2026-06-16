@@ -135,13 +135,35 @@ func (f *FlexInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FlexString handles JSON values that can be either a string or a number,
+// always rendered as a string (DataCatalog may return e.g. `unit` as either).
+type FlexString string
+
+func (f FlexString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(f))
+}
+
+func (f *FlexString) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = FlexString(s)
+		return nil
+	}
+	var num float64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = FlexString(strconv.FormatFloat(num, 'f', -1, 64))
+		return nil
+	}
+	return nil // silently ignore unparseable values
+}
+
 // CatalogMetadata holds optional metadata for a catalog entry.
-// Min, Max, Decimals, Scale use Flex types because DataCatalog may return them as strings or numbers.
+// Unit, Min, Max, Decimals, Scale use Flex types because DataCatalog may return them as strings or numbers.
 type CatalogMetadata struct {
 	TagLevel1        string            `json:"tagLevel1,omitempty"`
 	DescriptionMap   map[string]string `json:"-"`
 	DescriptionRaw   json.RawMessage   `json:"description,omitempty"`
-	Unit             string            `json:"unit,omitempty"`
+	Unit             FlexString        `json:"unit,omitempty"`
 	Min              FlexFloat64       `json:"min,omitempty"`
 	Max              FlexFloat64       `json:"max,omitempty"`
 	Decimals         FlexInt           `json:"decimals,omitempty"`

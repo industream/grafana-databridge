@@ -70,7 +70,7 @@ func resolvePattern(pattern string, ctx *ResolveContext) string {
 
 	if ctx.Entry.Metadata != nil {
 		result = strings.ReplaceAll(result, "{tagLevel1}", ctx.Entry.Metadata.TagLevel1)
-		result = strings.ReplaceAll(result, "{unit}", ctx.Entry.Metadata.Unit)
+		result = strings.ReplaceAll(result, "{unit}", string(ctx.Entry.Metadata.Unit))
 
 		if descMap := ctx.Entry.Metadata.Description(); descMap != nil {
 			for locale, desc := range descMap {
