@@ -10,6 +10,10 @@ on:
 # `pull requests: read and write`
 # `workflows: read and write`
 
+env:
+  # Force nested JS actions onto Node 24 (silences the Node 20 deprecation warning).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   release:
     runs-on: ubuntu-latest
