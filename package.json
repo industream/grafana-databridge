@@ -87,6 +87,7 @@
     "uplot": "^1.6.31",
     "fast-uri": "^3.0.1",
     "flatted": "^3.3.1",
-    "serialize-javascript": "^7.0.5"
+    "serialize-javascript": "^7.0.5",
+    "form-data": "^4.0.6"
   }
 }
