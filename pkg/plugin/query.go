@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -97,14 +98,20 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		return backend.ErrDataResponse(backend.StatusInternal, "DataCatalog URL is not configured")
 	}
 
-	// Collect all catalog entry IDs from select definitions
+	// Collect all catalog entry IDs from select definitions. A select is
+	// resolvable if it carries either a catalogEntryId (resolved by id, possibly
+	// cross-instance via the column fallback) or a stable column (column-only).
 	ids := make([]string, 0, len(qd.Select))
+	resolvable := 0
 	for _, s := range qd.Select {
 		if s.CatalogEntryId != "" {
 			ids = append(ids, s.CatalogEntryId)
 		}
+		if s.CatalogEntryId != "" || s.Column != "" {
+			resolvable++
+		}
 	}
-	if len(ids) == 0 {
+	if resolvable == 0 {
 		return backend.ErrDataResponse(backend.StatusBadRequest, "no catalog entries selected")
 	}
 
@@ -135,11 +142,19 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		}
 	}
 
+	// Build the column-fallback index only when at least one select fails id
+	// resolution but carries a stable column — the common same-instance path
+	// pays nothing (byColumn stays nil).
+	var byColumn map[string]*datacatalog.CatalogEntry
+	if selectsNeedColumnFallback(qd.Select, entryMap) {
+		byColumn = d.dataBridgeEntriesByColumn(ctx)
+	}
+
 	// Enrich DataType from catalog entries (frontend may send empty dataType in saved queries)
 	for i := range qd.Select {
 		s := &qd.Select[i]
 		if s.DataType == "" {
-			if entry, ok := entryMap[s.CatalogEntryId]; ok {
+			if entry := resolveEntry(s, entryMap, byColumn); entry != nil {
 				s.DataType = entry.DataType
 			}
 		}
@@ -148,7 +163,7 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 	resolveAggregations(qd.Select)
 
 	// Group select items by (connectionUrl, database, dataset)
-	targets, err := d.groupByTarget(ctx, qd.Select, entryMap)
+	targets, err := d.groupByTarget(ctx, qd.Select, entryMap, byColumn)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("resolve targets: %v", err))
 	}
@@ -168,7 +183,7 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		dr := d.executeAndConvert(ctx, t.bridgeUrl, t.databaseName, t.datasetName, query.RefID, recordsQuery)
 		if dr.Error == nil {
 			for _, frame := range dr.Frames {
-				d.applyDisplayNamesFromMap(frame, &subQd, entryMap)
+				d.applyDisplayNamesFromMap(frame, &subQd, entryMap, byColumn)
 			}
 		}
 		return dr
@@ -202,7 +217,7 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 			}
 
 			for _, frame := range dr.Frames {
-				d.applyDisplayNamesFromMap(frame, &subQd, entryMap)
+				d.applyDisplayNamesFromMap(frame, &subQd, entryMap, byColumn)
 			}
 			results[idx] = targetResult{frames: dr.Frames}
 		}(i, t)
@@ -232,8 +247,48 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 	return dr
 }
 
+// columnKey returns the index key for a select's stable column. Kept as a single
+// switch point: if the frontend later persists database/dataset on the select,
+// switch to a composite key here (and in columnKeyEntry) for exact disambiguation.
+func columnKey(s *models.SelectDefinition) string {
+	return s.Column
+}
+
+// resolveEntry resolves a select to its catalog entry, id first (same-instance,
+// unchanged), then the stable column fallback (cross-instance portability).
+func resolveEntry(s *models.SelectDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) *datacatalog.CatalogEntry {
+	if s.CatalogEntryId != "" {
+		if e, ok := entryMap[s.CatalogEntryId]; ok {
+			return e
+		}
+	}
+	if s.Column != "" {
+		if e, ok := byColumn[columnKey(s)]; ok {
+			return e
+		}
+	}
+	return nil
+}
+
+// selectsNeedColumnFallback reports whether any select fails id resolution but
+// carries a stable column, so the (more expensive) byColumn index is worth building.
+func selectsNeedColumnFallback(selectItems []models.SelectDefinition, entryMap map[string]*datacatalog.CatalogEntry) bool {
+	for i := range selectItems {
+		s := &selectItems[i]
+		if s.CatalogEntryId != "" {
+			if _, ok := entryMap[s.CatalogEntryId]; ok {
+				continue
+			}
+		}
+		if s.Column != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // groupByTarget groups select items by their DataBridge target (connection URL + database + dataset).
-func (d *Datasource) groupByTarget(ctx context.Context, selectItems []models.SelectDefinition, entryMap map[string]*datacatalog.CatalogEntry) ([]queryTarget, error) {
+func (d *Datasource) groupByTarget(ctx context.Context, selectItems []models.SelectDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) ([]queryTarget, error) {
 	type targetKey struct {
 		bridgeUrl    string
 		databaseName string
@@ -244,8 +299,10 @@ func (d *Datasource) groupByTarget(ctx context.Context, selectItems []models.Sel
 	var orderedKeys []targetKey
 
 	for _, s := range selectItems {
-		entry, ok := entryMap[s.CatalogEntryId]
-		if !ok {
+		entry := resolveEntry(&s, entryMap, byColumn)
+		if entry == nil {
+			d.logger.Warn("select dropped: unresolved entry",
+				"catalogEntryId", s.CatalogEntryId, "column", s.Column)
 			continue
 		}
 
@@ -288,6 +345,15 @@ func (d *Datasource) executeAndConvert(ctx context.Context, bridgeUrl, databaseN
 	client := d.dataBridgeClient(bridgeUrl)
 	resp, err := client.QueryRecords(ctx, databaseName, datasetName, rq)
 	if err != nil {
+		// "Column does not exist" (422) means DataBridge has no data for the requested
+		// column(s) — surface a clear "No data" message with the API detail underneath
+		// instead of a raw internal error.
+		var apiErr *databridge.APIError
+		if errors.As(err, &apiErr) && apiErr.NoData {
+			return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf(
+				"No data found in Database %s/%s\nAPI error %d: %s",
+				databaseName, datasetName, apiErr.StatusCode, apiErr.Detail))
+		}
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("query %s/%s on %s: %v", databaseName, datasetName, bridgeUrl, err))
 	}
 
@@ -634,7 +700,7 @@ func aliasOrDefault(alias, fallback string) string {
 }
 
 // applyDisplayNamesFromMap sets display names on frame fields using a pre-built entry map.
-func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.QueryDefinition, entryMap map[string]*datacatalog.CatalogEntry) {
+func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.QueryDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) {
 	if len(qd.Select) == 0 {
 		return
 	}
@@ -669,7 +735,7 @@ func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.Quer
 			continue
 		}
 
-		entry := entryMap[s.CatalogEntryId]
+		entry := resolveEntry(s, entryMap, byColumn)
 		if entry == nil {
 			continue
 		}

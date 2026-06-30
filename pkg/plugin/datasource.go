@@ -118,7 +118,7 @@ func (d *Datasource) remapToDataBridge(ctx context.Context, entries []datacatalo
 	}
 
 	// Fetch all entries to find DataBridge counterparts by name
-	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
+	allEntries, err := d.getAllEntries(ctx)
 	if err != nil {
 		d.logger.Warn("Failed to fetch entries for remap", "error", err)
 		return entries, nil
@@ -149,6 +149,64 @@ func (d *Datasource) remapToDataBridge(ctx context.Context, entries []datacatalo
 		}
 	}
 	return result, remapped
+}
+
+// getAllEntries returns all DataBridge catalog entries, served from entryCache.
+// The underlying ListEntries call filters server-side to sourceTypes=DataBridge.
+// This single cached fetch backs both remapToDataBridge and the column fallback.
+func (d *Datasource) getAllEntries(ctx context.Context) ([]datacatalog.CatalogEntry, error) {
+	if entries, ok := d.entryCache.Get("all"); ok {
+		return entries, nil
+	}
+	if d.catalogClient == nil {
+		return nil, nil
+	}
+	entries, err := d.catalogClient.ListEntries(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	d.entryCache.Set("all", entries)
+	return entries, nil
+}
+
+// dataBridgeEntriesByColumn builds an index of DataBridge entries keyed by their
+// stable "column" source param. It is the cross-instance fallback: when a query's
+// catalogEntryId (a per-instance Guid) does not resolve locally, the column key
+// recovers the right DataBridge routing target.
+//
+// The index is built from the cached all-entries listing, which is already
+// filtered server-side to sourceTypes=DataBridge — so we key purely on a
+// non-empty column and do NOT gate on IsDataBridgeEntry() (the list payload does
+// not reliably hydrate the nested sourceConnection.sourceType, which would
+// otherwise wrongly empty the index). On a duplicate column the first entry in
+// listing order wins deterministically and a collision warning is logged.
+func (d *Datasource) dataBridgeEntriesByColumn(ctx context.Context) map[string]*datacatalog.CatalogEntry {
+	all, err := d.getAllEntries(ctx)
+	if err != nil {
+		d.logger.Warn("Failed to fetch entries for column fallback", "error", err)
+		return map[string]*datacatalog.CatalogEntry{}
+	}
+
+	idx := make(map[string]*datacatalog.CatalogEntry, len(all))
+	for i := range all {
+		e := &all[i]
+		col := e.GetSourceParam("column")
+		if col == "" {
+			continue
+		}
+		if existing, dup := idx[col]; dup {
+			d.logger.Warn("Column fallback collision: multiple DataBridge entries share a column; keeping first",
+				"column", col,
+				"keptDatabase", existing.GetSourceParam("database"),
+				"keptDataset", existing.GetSourceParam("dataset"),
+				"droppedDatabase", e.GetSourceParam("database"),
+				"droppedDataset", e.GetSourceParam("dataset"),
+			)
+			continue
+		}
+		idx[col] = e
+	}
+	return idx
 }
 
 // getConnections returns cached source connections, fetching from DataCatalog if needed.

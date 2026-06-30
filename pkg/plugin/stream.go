@@ -98,27 +98,34 @@ func (d *Datasource) RunStream(ctx context.Context, req *backend.RunStreamReques
 	})
 }
 
-// runMultiDatasetStream resolves catalog entries into targets and streams all of them.
-func (d *Datasource) runMultiDatasetStream(ctx context.Context, sender *backend.StreamSender, selectItems []models.SelectDefinition, interval time.Duration) error {
+// resolveStreamTargets resolves catalog entries into DataBridge query targets,
+// applying the same id-first / column-fallback resolution as the query path so
+// cross-instance dashboards stream without edits.
+func (d *Datasource) resolveStreamTargets(ctx context.Context, selectItems []models.SelectDefinition) ([]queryTarget, error) {
 	if d.catalogClient == nil {
-		return fmt.Errorf("DataCatalog URL is not configured")
+		return nil, fmt.Errorf("DataCatalog URL is not configured")
 	}
 
-	// Collect catalog entry IDs
+	// Collect catalog entry IDs. A select is resolvable via either its id or its
+	// stable column (cross-instance fallback).
 	ids := make([]string, 0, len(selectItems))
+	resolvable := 0
 	for _, s := range selectItems {
 		if s.CatalogEntryId != "" {
 			ids = append(ids, s.CatalogEntryId)
 		}
+		if s.CatalogEntryId != "" || s.Column != "" {
+			resolvable++
+		}
 	}
-	if len(ids) == 0 {
-		return fmt.Errorf("no catalog entries in stream request")
+	if resolvable == 0 {
+		return nil, fmt.Errorf("no catalog entries in stream request")
 	}
 
 	// Fetch entries and resolve targets
 	entries, err := d.catalogClient.GetEntriesByIds(ctx, ids)
 	if err != nil {
-		return fmt.Errorf("fetch entries: %w", err)
+		return nil, fmt.Errorf("fetch entries: %w", err)
 	}
 
 	entryMap := make(map[string]*datacatalog.CatalogEntry, len(entries))
@@ -126,13 +133,28 @@ func (d *Datasource) runMultiDatasetStream(ctx context.Context, sender *backend.
 		entryMap[entries[i].ID] = &entries[i]
 	}
 
-	targets, err := d.groupByTarget(ctx, selectItems, entryMap)
+	// Build the column-fallback index only when an id fails to resolve.
+	var byColumn map[string]*datacatalog.CatalogEntry
+	if selectsNeedColumnFallback(selectItems, entryMap) {
+		byColumn = d.dataBridgeEntriesByColumn(ctx)
+	}
+
+	targets, err := d.groupByTarget(ctx, selectItems, entryMap, byColumn)
 	if err != nil {
-		return fmt.Errorf("resolve targets: %w", err)
+		return nil, fmt.Errorf("resolve targets: %w", err)
 	}
 
 	if len(targets) == 0 {
-		return fmt.Errorf("no valid stream targets found")
+		return nil, fmt.Errorf("no valid stream targets found")
+	}
+	return targets, nil
+}
+
+// runMultiDatasetStream resolves catalog entries into targets and streams all of them.
+func (d *Datasource) runMultiDatasetStream(ctx context.Context, sender *backend.StreamSender, selectItems []models.SelectDefinition, interval time.Duration) error {
+	targets, err := d.resolveStreamTargets(ctx, selectItems)
+	if err != nil {
+		return err
 	}
 
 	d.logger.Info("Multi-dataset stream started", "targets", len(targets))
