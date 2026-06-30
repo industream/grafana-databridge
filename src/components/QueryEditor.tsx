@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { useAssetTree } from '../hooks/useAssetTree';
 import { useRowEstimate } from '../hooks/useRowEstimate';
+import { useCapabilities } from '../hooks/useCapabilities';
 import { AssetTree } from './AssetTree';
 import { SelectedTags } from './SelectedTags';
 import { RawColumnSelector } from './RawColumnSelector';
@@ -55,6 +56,11 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
   // DataCatalog mode state
   const assetTree = useAssetTree(datasource);
   const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
+
+  // Active-provider capabilities — used to grey out unsupported aggregations.
+  // Resolved for the selected connection (raw mode) or the default DataBridge
+  // instance (dataCatalog mode). Null = unknown → offer everything.
+  const capabilities = useCapabilities(datasource, query.connectionId);
 
   // UI state
   const [isDisplayOpen, setIsDisplayOpen] = useState(false);
@@ -343,6 +349,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
                 displayNamePreset={query.displayNamePreset ?? 'entryName'}
                 displayNamePattern={query.displayNamePattern ?? ''}
                 assetPaths={assetTree.assetPaths}
+                capabilities={capabilities}
                 onRemove={handleRemoveTag}
                 onAggregationChange={handleAggregationChange}
               />
@@ -406,6 +413,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
             <RawColumnSelector
               columns={schemaColumns}
               select={query.select ?? []}
+              capabilities={capabilities}
               onToggleColumn={handleToggleRawColumn}
               onRemove={handleRemoveRawColumn}
               onAggregationChange={handleRawAggregationChange}

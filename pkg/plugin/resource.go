@@ -21,6 +21,7 @@ func (d *Datasource) resourceHandler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /connections", d.handleGetConnections)
+	mux.HandleFunc("GET /capabilities", d.handleGetCapabilities)
 	mux.HandleFunc("GET /databases", d.handleGetDatabases)
 	mux.HandleFunc("GET /datasets", d.handleGetDatasets)
 	mux.HandleFunc("GET /schema", d.handleGetSchema)
@@ -58,6 +59,32 @@ func (d *Datasource) handleGetDatabases(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, databases)
+}
+
+// handleGetCapabilities proxies GET /info from the target DataBridge instance
+// and returns its capabilities to the frontend. The response always has the
+// shape {"capabilities": <object|null>} so the frontend can distinguish
+// "advertised" from "unknown" (degrade-open) without ambiguity.
+func (d *Datasource) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
+	connectionId := r.URL.Query().Get("connectionId")
+	bridgeUrl, err := d.resolveConnectionUrl(r.Context(), connectionId)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	client := d.dataBridgeClient(bridgeUrl)
+	info, err := client.GetInfo(r.Context())
+	if err != nil {
+		// Degrade open: a DataBridge that cannot answer /info (older route,
+		// transient failure) must not block the editor — the frontend offers
+		// the full aggregation set when capabilities are unknown.
+		d.logger.Warn("Failed to fetch DataBridge capabilities", "url", bridgeUrl, "error", err)
+		writeJSON(w, map[string]interface{}{"capabilities": nil})
+		return
+	}
+
+	writeJSON(w, map[string]interface{}{"capabilities": info.Capabilities})
 }
 
 func (d *Datasource) handleGetDatasets(w http.ResponseWriter, r *http.Request) {

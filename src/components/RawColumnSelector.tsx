@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { css } from '@emotion/css';
-import { Badge, Combobox, IconButton, useStyles2 } from '@grafana/ui';
+import { Badge, Combobox, Icon, IconButton, Tooltip, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { ColumnInfo, SelectDefinition, TagOperation } from '../types';
+import { ColumnInfo, ProviderCapabilities, SelectDefinition, TagOperation } from '../types';
 import { dataTypeColor } from '../utils/colors';
+import { decorateAggregationOptions, guardAggregationChange, isAggregationSupported } from '../utils/capabilities';
 
 interface RawColumnSelectorProps {
   columns: ColumnInfo[];
   select: SelectDefinition[];
+  capabilities?: ProviderCapabilities | null;
   onToggleColumn: (column: ColumnInfo) => void;
   onRemove: (index: number) => void;
   onAggregationChange: (index: number, operation: TagOperation) => void;
@@ -33,6 +35,7 @@ const OPERATION_OPTIONS = [
 export function RawColumnSelector({
   columns,
   select,
+  capabilities,
   onToggleColumn,
   onRemove,
   onAggregationChange,
@@ -40,6 +43,12 @@ export function RawColumnSelector({
   const styles = useStyles2(getStyles);
 
   const selectedColumns = new Set(select.map((s) => s.column));
+
+  // Grey out (never hide) aggregations the active provider cannot compute.
+  const operationOptions = useMemo(
+    () => decorateAggregationOptions(OPERATION_OPTIONS, capabilities),
+    [capabilities]
+  );
 
   // Filter out time column — it's always included automatically
   const selectableColumns = columns.filter((c) => c.name !== 'time');
@@ -72,10 +81,22 @@ export function RawColumnSelector({
               <span className={styles.tagName}>{item.column}</span>
               <span className={styles.typeLabel}>{item.dataType}</span>
 
+              {!isAggregationSupported(item.aggregation ?? 'optimized', capabilities) && (
+                <Tooltip content={`"${item.aggregation}" is not supported by the active provider. Pick another aggregation.`}>
+                  <Icon name="exclamation-triangle" className={styles.warningIcon} />
+                </Tooltip>
+              )}
+
               <Combobox
-                options={OPERATION_OPTIONS}
+                options={operationOptions}
                 value={item.aggregation ?? 'optimized'}
-                onChange={(option) => onAggregationChange(index, option.value as TagOperation)}
+                onChange={(option) => {
+                  // Block selecting a greyed (unsupported) option — never silently rewrite.
+                  const next = guardAggregationChange(option.value as TagOperation, capabilities);
+                  if (next !== undefined) {
+                    onAggregationChange(index, next);
+                  }
+                }}
                 width={12}
               />
 
@@ -162,6 +183,10 @@ function getStyles(theme: GrafanaTheme2) {
     typeLabel: css({
       fontSize: theme.typography.bodySmall.fontSize,
       color: theme.colors.text.disabled,
+      flexShrink: 0,
+    }),
+    warningIcon: css({
+      color: theme.colors.warning.text,
       flexShrink: 0,
     }),
     emptyState: css({

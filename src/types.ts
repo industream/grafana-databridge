@@ -277,3 +277,25 @@ export interface Label {
   id: string;
   name: string;
 }
+
+// --- Provider capabilities (DataBridge GET /info.capabilities) ---
+
+/**
+ * What the active DataBridge provider can actually compute. Mirrors the
+ * DataBridge `CapabilitiesInfo` DTO. `supportedAggregations` uses the
+ * query-time SELECT vocabulary; `supportedStats` the ComputeStats vocabulary.
+ */
+export interface ProviderCapabilities {
+  supportedAggregations: string[];
+  supportedStats: string[];
+  supportsExactComputeOnRawWindow: boolean;
+}
+
+/**
+ * Response shape of the `capabilities` resource. `capabilities` is null when
+ * the target DataBridge predates the capability contract (or could not be
+ * reached) — consumers must then degrade open and offer every aggregation.
+ */
+export interface CapabilitiesResponse {
+  capabilities: ProviderCapabilities | null;
+}

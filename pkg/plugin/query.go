@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -288,6 +289,14 @@ func (d *Datasource) executeAndConvert(ctx context.Context, bridgeUrl, databaseN
 	client := d.dataBridgeClient(bridgeUrl)
 	resp, err := client.QueryRecords(ctx, databaseName, datasetName, rq)
 	if err != nil {
+		// A capability rejection (422 *NotSupported) is the user's fault, not
+		// ours: surface the DataBridge message as a downstream error so Grafana
+		// shows a clean banner ("not supported by the active provider") instead
+		// of a generic 500 with a raw JSON blob.
+		var apiErr *databridge.APIError
+		if errors.As(err, &apiErr) && apiErr.IsNotSupported() {
+			return backend.ErrDataResponseWithSource(backend.StatusValidationFailed, backend.ErrorSourceDownstream, apiErr.Error())
+		}
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("query %s/%s on %s: %v", databaseName, datasetName, bridgeUrl, err))
 	}
 

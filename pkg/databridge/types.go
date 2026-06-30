@@ -130,3 +130,25 @@ type RecordsResponse struct {
 	Columns []string        `json:"columns"`
 	Items   [][]interface{} `json:"items"`
 }
+
+// InfoResponse is the response from GET /info. It advertises the active
+// provider and — on capability-aware DataBridge images — the set of
+// aggregations and stats that provider can actually compute.
+//
+// Capabilities is nullable: older DataBridge images omit it. A nil value means
+// "unknown", and consumers must degrade open (offer everything).
+type InfoResponse struct {
+	Edition            string            `json:"edition"`
+	ActiveProvider     string            `json:"activeProvider"`
+	AvailableProviders []string          `json:"availableProviders"`
+	Capabilities       *CapabilitiesInfo `json:"capabilities,omitempty"`
+}
+
+// CapabilitiesInfo describes what the active provider supports. The sets use
+// the DataBridge vocabularies: SupportedAggregations is the query-time SELECT
+// function set, SupportedStats is the ComputeStats set.
+type CapabilitiesInfo struct {
+	SupportedAggregations           []string `json:"supportedAggregations"`
+	SupportedStats                  []string `json:"supportedStats"`
+	SupportsExactComputeOnRawWindow bool     `json:"supportsExactComputeOnRawWindow"`
+}

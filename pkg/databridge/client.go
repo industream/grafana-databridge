@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -58,6 +59,17 @@ func (c *Client) GetSchema(ctx context.Context, databaseName, datasetName string
 		}
 	}
 	return nil, fmt.Errorf("dataset %q not found", datasetName)
+}
+
+// GetInfo returns the DataBridge instance info, including the active provider
+// and its capabilities. Capabilities is nil on older images that predate the
+// capability contract — callers must degrade open in that case.
+func (c *Client) GetInfo(ctx context.Context) (*InfoResponse, error) {
+	var result InfoResponse
+	if err := c.get(ctx, "/info", nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // QueryRecords executes a records query and returns the raw JSON response body.
@@ -153,7 +165,7 @@ func (c *Client) doAndDecode(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+		return newAPIError(resp.StatusCode, respBody)
 	}
 
 	if result != nil {
@@ -162,4 +174,61 @@ func (c *Client) doAndDecode(req *http.Request, result interface{}) error {
 		}
 	}
 	return nil
+}
+
+// problemDetails is the subset of an RFC 7807 problem-details body that
+// DataBridge returns for validation errors (422). The "code" field carries the
+// typed error name, e.g. "QueryRecords.AggregationNotSupported".
+type problemDetails struct {
+	Type   string `json:"type"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Status int    `json:"status"`
+	Code   string `json:"code"`
+}
+
+// APIError is a non-2xx response from the DataBridge API. It preserves the HTTP
+// status and, when the body is an RFC 7807 problem-details document, the typed
+// error code and human-readable detail so callers can surface a clean message
+// instead of a raw JSON blob.
+type APIError struct {
+	StatusCode int
+	Code       string
+	Detail     string
+	Body       string
+}
+
+// newAPIError builds an APIError, parsing the body as problem-details when
+// possible and falling back to the raw body otherwise.
+func newAPIError(statusCode int, body []byte) *APIError {
+	apiErr := &APIError{StatusCode: statusCode, Body: string(body)}
+	var pd problemDetails
+	if err := json.Unmarshal(body, &pd); err == nil {
+		apiErr.Code = pd.Code
+		// Prefer the most specific human-readable message available.
+		if pd.Detail != "" {
+			apiErr.Detail = pd.Detail
+		} else if pd.Title != "" {
+			apiErr.Detail = pd.Title
+		}
+	}
+	return apiErr
+}
+
+// Error implements the error interface with a concise, user-readable message.
+func (e *APIError) Error() string {
+	if e.Detail != "" {
+		if e.Code != "" {
+			return fmt.Sprintf("%s: %s", e.Code, e.Detail)
+		}
+		return e.Detail
+	}
+	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
+}
+
+// IsNotSupported reports whether this error is a DataBridge capability
+// rejection (a 422 carrying a *NotSupported code), which means the active
+// provider does not support the requested aggregation or stat.
+func (e *APIError) IsNotSupported() bool {
+	return e.StatusCode == http.StatusUnprocessableEntity && strings.HasSuffix(e.Code, "NotSupported")
 }

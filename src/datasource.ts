@@ -13,6 +13,8 @@ import {
   CatalogEntryMetadata,
   AssetTree,
   Label,
+  CapabilitiesResponse,
+  ProviderCapabilities,
 } from './types';
 import { VariableQuery } from './components/VariableQueryEditor';
 
@@ -111,6 +113,17 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
 
   async getLabels(): Promise<Label[]> {
     return this.getResource<Label[]>('labels');
+  }
+
+  /**
+   * Fetch the active provider's capabilities for the given connection (or the
+   * default DataBridge instance when omitted). Returns `null` when capabilities
+   * are unknown — the caller must then degrade open and offer everything.
+   */
+  async getCapabilities(connectionId?: string): Promise<ProviderCapabilities | null> {
+    const params = connectionId ? { connectionId } : undefined;
+    const res = await this.getResource<CapabilitiesResponse>('capabilities', params);
+    return res?.capabilities ?? null;
   }
 
   async clearCache(): Promise<void> {
