@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -153,7 +154,7 @@ func (c *Client) doAndDecode(req *http.Request, result interface{}) error {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+		return newAPIError(resp.StatusCode, respBody)
 	}
 
 	if result != nil {
@@ -162,4 +163,49 @@ func (c *Client) doAndDecode(req *http.Request, result interface{}) error {
 		}
 	}
 	return nil
+}
+
+// APIError is a structured DataBridge API error. NoData is true when the failure is a
+// 422 "column does not exist" — i.e. DataBridge simply has no data for the requested
+// column(s) (typically because the source never wrote any value), not a real fault.
+// Detail carries the human-readable reason(s) extracted from the RFC problem+json body.
+type APIError struct {
+	StatusCode int
+	Body       string
+	NoData     bool
+	Detail     string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
+}
+
+// newAPIError parses a non-2xx DataBridge response body (RFC 7807 problem+json) and
+// flags the "column does not exist" case so callers can surface a clearer message.
+func newAPIError(status int, body []byte) *APIError {
+	e := &APIError{StatusCode: status, Body: string(body)}
+	var p struct {
+		Detail string `json:"detail"`
+		Errors []struct {
+			Detail string `json:"detail"`
+			Code   string `json:"code"`
+		} `json:"errors"`
+	}
+	if json.Unmarshal(body, &p) == nil {
+		var details []string
+		for _, er := range p.Errors {
+			if strings.Contains(er.Code, "ColumnDoesNotExist") {
+				e.NoData = true
+			}
+			if er.Detail != "" {
+				details = append(details, er.Detail)
+			}
+		}
+		if len(details) > 0 {
+			e.Detail = strings.Join(details, "; ")
+		} else {
+			e.Detail = p.Detail
+		}
+	}
+	return e
 }
