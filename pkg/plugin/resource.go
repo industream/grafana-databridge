@@ -162,11 +162,15 @@ func (d *Datasource) handleGetNodeEntries(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	entries, err := d.catalogClient.GetEntriesByIds(r.Context(), ids)
+	// Node entryIds are logical ids. GetEntriesByIds matches on the binding id
+	// (?ids=), so it would miss them. Resolve against the DataBridge entries by
+	// logical id instead. ListEntries already scopes to sourceTypes=DataBridge.
+	allEntries, err := d.catalogClient.ListEntries(r.Context(), "", "")
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	entries := selectEntriesByLogicalIds(allEntries, ids)
 	writeJSON(w, d.filterEntriesByConnection(entries))
 }
 
@@ -185,19 +189,14 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 		return
 	}
 
-	// With the parent/binding model, entries have the same ID across bindings (OPC-UA + DataBridge).
-	// ListEntries already filters by sourceTypes=DataBridge, so we use those IDs directly.
-	// No remap needed — asset nodes reference parent entry IDs which work for both bindings.
+	// Parent/binding model: a DataBridge entry's own id (CatalogEntry.ID) differs
+	// from its logical id (CatalogEntry.EntryID). Asset nodes reference the logical
+	// id, so the valid set must be keyed on GetLogicalID() — keying on .ID drops
+	// every node entry. ListEntries already scopes to sourceTypes=DataBridge.
 	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
 	var validEntryIds map[string]bool
 	if err == nil {
-		validEntryIds = make(map[string]bool)
-		for _, e := range allEntries {
-			if d.settings.SourceConnectionId != "" && e.GetSourceConnectionID() != d.settings.SourceConnectionId {
-				continue
-			}
-			validEntryIds[e.ID] = true
-		}
+		validEntryIds = buildValidEntryIds(allEntries, d.settings.SourceConnectionId)
 	}
 
 	for i := range trees {
@@ -231,6 +230,39 @@ func filterTreeEntryIds(nodes []datacatalog.AssetNode, validIds map[string]bool)
 			filterTreeEntryIds(nodes[i].Children, validIds)
 		}
 	}
+}
+
+// buildValidEntryIds returns the set of logical entry IDs present in entries
+// (keyed by GetLogicalID), optionally restricted to a single source connection.
+// Asset dictionary nodes reference logical IDs, so this is the correct match key
+// for filterTreeEntryIds.
+func buildValidEntryIds(entries []datacatalog.CatalogEntry, connId string) map[string]bool {
+	valid := make(map[string]bool, len(entries))
+	for i := range entries {
+		e := &entries[i]
+		if connId != "" && e.GetSourceConnectionID() != connId {
+			continue
+		}
+		valid[e.GetLogicalID()] = true
+	}
+	return valid
+}
+
+// selectEntriesByLogicalIds returns the entries whose logical id (GetLogicalID)
+// is in logicalIds. Used to resolve asset-node entryIds (logical) to the actual
+// DataBridge binding entries, since GetEntriesByIds matches on the binding id.
+func selectEntriesByLogicalIds(entries []datacatalog.CatalogEntry, logicalIds []string) []datacatalog.CatalogEntry {
+	want := make(map[string]bool, len(logicalIds))
+	for _, id := range logicalIds {
+		want[id] = true
+	}
+	out := make([]datacatalog.CatalogEntry, 0, len(logicalIds))
+	for i := range entries {
+		if want[entries[i].GetLogicalID()] {
+			out = append(out, entries[i])
+		}
+	}
+	return out
 }
 
 // buildNodeTree converts a flat list of nodes with parentId into a nested tree.

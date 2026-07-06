@@ -21,8 +21,16 @@ type SourceType struct {
 }
 
 // CatalogEntry represents a catalog entry from the DataCatalog API.
+//
+// The DataCatalog binding model distinguishes two identifiers:
+//   - ID:      the per-binding id (unique for the DataBridge binding).
+//   - EntryID: the logical/parent entry id, shared across bindings.
+//
+// Asset dictionary nodes reference the logical EntryID, so any matching between
+// asset-node entryIds and catalog entries MUST use GetLogicalID(), not ID.
 type CatalogEntry struct {
 	ID               string            `json:"id"`
+	EntryID          string            `json:"entryId,omitempty"`
 	Name             string            `json:"name"`
 	SourceConnection *SourceConnection `json:"sourceConnection,omitempty"`
 	SourceConnectionID string          `json:"sourceConnectionId,omitempty"`
@@ -40,6 +48,16 @@ func (e *CatalogEntry) GetSourceParam(key string) string {
 		}
 	}
 	return ""
+}
+
+// GetLogicalID returns the logical entry id used by asset dictionary nodes.
+// It prefers EntryID (the parent id shared across bindings) and falls back to
+// ID for catalogs/entries that do not expose the binding model.
+func (e *CatalogEntry) GetLogicalID() string {
+	if e.EntryID != "" {
+		return e.EntryID
+	}
+	return e.ID
 }
 
 // GetSourceConnectionID returns the source connection ID from either the nested object or the flat field.
