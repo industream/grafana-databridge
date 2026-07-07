@@ -20,7 +20,6 @@ const OPERATION_OPTIONS = [
   { label: 'Optimized', value: 'optimized' },
   { label: 'Raw', value: 'none' },
   { label: 'avg', value: 'avg' },
-  { label: 'mean', value: 'mean' },
   { label: 'min', value: 'min' },
   { label: 'max', value: 'max' },
   { label: 'sum', value: 'sum' },

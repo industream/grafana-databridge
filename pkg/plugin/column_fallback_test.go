@@ -224,7 +224,7 @@ func TestApplyDisplayNames_ColumnResolvedKeepsMetadata(t *testing.T) {
 		data.NewField(fallbackTestColumn, nil, []float64{1, 2, 3}),
 	)
 
-	d.applyDisplayNamesFromMap(frame, qd, entryMap, byColumn)
+	d.applyDisplayNamesFromMap(context.Background(), frame, qd, entryMap, byColumn)
 
 	fc := frame.Fields[0].Config
 	if fc == nil {

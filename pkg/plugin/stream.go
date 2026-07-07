@@ -122,8 +122,9 @@ func (d *Datasource) resolveStreamTargets(ctx context.Context, selectItems []mod
 		return nil, fmt.Errorf("no catalog entries in stream request")
 	}
 
-	// Fetch entries and resolve targets
-	entries, err := d.catalogClient.GetEntriesByIds(ctx, ids)
+	// Fetch entries and resolve targets, serving from the cached all-entries
+	// listing when possible so streams don't refetch on every resolve.
+	entries, err := d.getEntriesByIds(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("fetch entries: %w", err)
 	}
