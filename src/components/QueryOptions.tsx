@@ -4,6 +4,7 @@ import { Collapse, Combobox, InlineField, InlineFieldRow, Input, RadioButtonGrou
 import { GrafanaTheme2 } from '@grafana/data';
 
 import {
+  ColumnInfo,
   DataBridgeQuery,
   FilterDefinition,
   FilterGroup,
@@ -20,6 +21,8 @@ interface QueryOptionsProps {
   onUpdateAndRun: (patch: Partial<DataBridgeQuery>) => void;
   isMultiDataset?: boolean;
   optimizeDisplay?: boolean;
+  /** Schema columns of the selected dataset, used to autocomplete WHERE columns. */
+  columns?: ColumnInfo[];
 }
 
 const TIME_WINDOW_INTERVAL_OPTIONS = [
@@ -49,7 +52,7 @@ function countConditions(filter?: FilterDefinition): number {
   return 1;
 }
 
-export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset, optimizeDisplay }: QueryOptionsProps) {
+export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset, optimizeDisplay, columns }: QueryOptionsProps) {
   const styles = useStyles2(getStyles);
 
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -106,6 +109,7 @@ export function QueryOptions({ query, onUpdate, onUpdateAndRun, isMultiDataset, 
           <FilterGroupEditor
             group={ensureGroup(query.where)}
             isRoot
+            columns={columns}
             onChange={(where) => onUpdate({ where })}
             onRunQuery={() => onUpdateAndRun({})}
           />
@@ -145,12 +149,13 @@ const COMBINATOR_OPTIONS = [
 interface FilterGroupEditorProps {
   group: FilterGroup;
   isRoot?: boolean;
+  columns?: ColumnInfo[];
   onChange: (group: FilterGroup) => void;
   onRunQuery: () => void;
   onRemove?: () => void;
 }
 
-function FilterGroupEditor({ group, isRoot, onChange, onRunQuery, onRemove }: FilterGroupEditorProps) {
+function FilterGroupEditor({ group, isRoot, columns, onChange, onRunQuery, onRemove }: FilterGroupEditorProps) {
   const styles = useStyles2(getStyles);
 
   const updateOperator = (op: LogicalOperator) => {
@@ -203,6 +208,7 @@ function FilterGroupEditor({ group, isRoot, onChange, onRunQuery, onRemove }: Fi
           {isFilterGroup(condition) ? (
             <FilterGroupEditor
               group={condition}
+              columns={columns}
               onChange={(updated) => updateCondition(index, updated)}
               onRunQuery={onRunQuery}
               onRemove={() => removeCondition(index)}
@@ -210,6 +216,7 @@ function FilterGroupEditor({ group, isRoot, onChange, onRunQuery, onRemove }: Fi
           ) : (
             <ConditionEditor
               condition={condition}
+              columns={columns}
               onChange={(updated) => updateCondition(index, updated)}
               onRemove={() => removeCondition(index)}
             />
@@ -231,21 +238,26 @@ function FilterGroupEditor({ group, isRoot, onChange, onRunQuery, onRemove }: Fi
 
 interface ConditionEditorProps {
   condition: FilterCondition;
+  columns?: ColumnInfo[];
   onChange: (condition: FilterCondition) => void;
   onRemove: () => void;
 }
 
-function ConditionEditor({ condition, onChange, onRemove }: ConditionEditorProps) {
+function ConditionEditor({ condition, columns, onChange, onRemove }: ConditionEditorProps) {
   const styles = useStyles2(getStyles);
+
+  // Autocomplete from the dataset schema; createCustomValue keeps free-text entry
+  // working when the schema is unavailable or the column isn't listed.
+  const columnOptions = (columns ?? []).map((c) => ({ label: c.name, value: c.name }));
 
   return (
     <InlineFieldRow>
       <InlineField label="Column" labelWidth={10}>
-        <Input
+        <Combobox
+          options={columnOptions}
           value={condition.column}
-          onChange={(e: ChangeEvent<HTMLInputElement>) =>
-            onChange({ ...condition, column: e.target.value })
-          }
+          onChange={(option) => onChange({ ...condition, column: option?.value ?? '' })}
+          createCustomValue
           placeholder="column name"
           width={16}
         />

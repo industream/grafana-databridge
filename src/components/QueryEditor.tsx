@@ -421,6 +421,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         onUpdateAndRun={updateAndRun}
         isMultiDataset={isMultiDataset}
         optimizeDisplay={optimizeDisplay}
+        columns={schemaColumns}
       />
 
       <TransformsEditor query={query} onUpdateAndRun={updateAndRun} />

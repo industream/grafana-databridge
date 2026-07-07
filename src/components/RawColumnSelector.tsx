@@ -26,7 +26,7 @@ const OPERATION_OPTIONS = [
   { label: 'last', value: 'last' },
   { label: 'stddev', value: 'stddev' },
   { label: 'stddev (pop)', value: 'stddev_pop' },
-  { label: 'variance', value: 'var' },
+  { label: 'variance', value: 'variance' },
   { label: 'variance (pop)', value: 'var_pop' },
 ];
 

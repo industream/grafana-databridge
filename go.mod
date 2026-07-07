@@ -2,7 +2,10 @@ module github.com/industream/industream-data-bridge
 
 go 1.25.7
 
-require github.com/grafana/grafana-plugin-sdk-go v0.290.0
+require (
+	github.com/grafana/grafana-plugin-sdk-go v0.290.0
+	golang.org/x/sync v0.21.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
@@ -78,7 +81,6 @@ require (
 	golang.org/x/exp v0.0.0-20251002181428-27f1f14c8bb9 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c // indirect
 	golang.org/x/text v0.36.0 // indirect

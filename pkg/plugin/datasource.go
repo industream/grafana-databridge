@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/industream/industream-data-bridge/pkg/cache"
 	"github.com/industream/industream-data-bridge/pkg/datacatalog"
@@ -33,6 +34,11 @@ type Datasource struct {
 	assetCache      *cache.Store[[]datacatalog.AssetDictionary]
 	assetPathCache  *cache.Store[map[string]string]
 	logger          log.Logger
+
+	// sf collapses concurrent cold-cache misses for the shared caches
+	// (connections, all-entries, asset tree) into a single in-flight fetch,
+	// avoiding a thundering herd when many panels load at once.
+	sf singleflight.Group
 }
 
 // NewDatasource creates a new datasource instance from Grafana settings.
@@ -161,12 +167,74 @@ func (d *Datasource) getAllEntries(ctx context.Context) ([]datacatalog.CatalogEn
 	if d.catalogClient == nil {
 		return nil, nil
 	}
-	entries, err := d.catalogClient.ListEntries(ctx, "", "")
+	v, err, _ := d.sf.Do("allEntries", func() (interface{}, error) {
+		// Re-check the cache inside the flight: another goroutine may have
+		// populated it while this one was blocked acquiring the single flight.
+		if entries, ok := d.entryCache.Get("all"); ok {
+			return entries, nil
+		}
+		// Detach cancellation: this fetch is shared by every singleflight joiner,
+		// so the first caller's cancellation must not abort it for the others.
+		// The catalog client's own timeout bounds the call.
+		entries, err := d.catalogClient.ListEntries(context.WithoutCancel(ctx), "", "")
+		if err != nil {
+			return nil, err
+		}
+		d.entryCache.Set("all", entries)
+		return entries, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	d.entryCache.Set("all", entries)
-	return entries, nil
+	return v.([]datacatalog.CatalogEntry), nil
+}
+
+// getEntriesByIds resolves catalog entries for the given binding ids, serving
+// from the cached all-entries listing first and only fetching the ids that are
+// missing from the cache. This keeps per-panel queries off the DataCatalog API
+// on the hot path while preserving GetEntriesByIds' binding-id match semantics
+// (entries are keyed by CatalogEntry.ID, not the logical GetLogicalID()).
+func (d *Datasource) getEntriesByIds(ctx context.Context, ids []string) ([]datacatalog.CatalogEntry, error) {
+	if len(ids) == 0 || d.catalogClient == nil {
+		return nil, nil
+	}
+
+	all, err := d.getAllEntries(ctx)
+	if err != nil {
+		// The all-entries listing is unavailable — fall back to a direct fetch so
+		// the query path degrades to the previous behaviour rather than failing.
+		return d.catalogClient.GetEntriesByIds(ctx, ids)
+	}
+
+	byID := make(map[string]*datacatalog.CatalogEntry, len(all))
+	for i := range all {
+		byID[all[i].ID] = &all[i]
+	}
+
+	result := make([]datacatalog.CatalogEntry, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	var missing []string
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if e, ok := byID[id]; ok {
+			result = append(result, *e)
+		} else {
+			missing = append(missing, id)
+		}
+	}
+
+	if len(missing) > 0 {
+		fetched, err := d.catalogClient.GetEntriesByIds(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, fetched...)
+	}
+
+	return result, nil
 }
 
 // dataBridgeEntriesByColumn builds an index of DataBridge entries keyed by their
@@ -219,10 +287,20 @@ func (d *Datasource) getConnections(ctx context.Context) ([]datacatalog.SourceCo
 		return nil, nil
 	}
 
-	conns, err := d.catalogClient.ListConnections(ctx)
+	v, err, _ := d.sf.Do("connections", func() (interface{}, error) {
+		if conns, ok := d.connectionCache.Get("all"); ok {
+			return conns, nil
+		}
+		// Detached: shared across singleflight joiners (see getAllEntries).
+		conns, err := d.catalogClient.ListConnections(context.WithoutCancel(ctx))
+		if err != nil {
+			return nil, err
+		}
+		d.connectionCache.Set("all", conns)
+		return conns, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	d.connectionCache.Set("all", conns)
-	return conns, nil
+	return v.([]datacatalog.SourceConnection), nil
 }

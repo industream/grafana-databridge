@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
@@ -164,8 +165,8 @@ func (d *Datasource) handleGetNodeEntries(w http.ResponseWriter, r *http.Request
 
 	// Node entryIds are logical ids. GetEntriesByIds matches on the binding id
 	// (?ids=), so it would miss them. Resolve against the DataBridge entries by
-	// logical id instead. ListEntries already scopes to sourceTypes=DataBridge.
-	allEntries, err := d.catalogClient.ListEntries(r.Context(), "", "")
+	// logical id instead. getAllEntries serves the cached, DataBridge-scoped list.
+	allEntries, err := d.getAllEntries(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -181,6 +182,21 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 	if _, ok := d.assetCache.Get("all"); ok {
 		return
 	}
+	// Collapse concurrent cold-cache misses into one build (thundering-herd guard).
+	_, _, _ = d.sf.Do("assetTree", func() (interface{}, error) {
+		if _, ok := d.assetCache.Get("all"); ok {
+			return nil, nil
+		}
+		// Detach cancellation: this build is shared by every singleflight joiner,
+		// so the first caller's cancellation must not abort it for the others.
+		d.loadAssetTree(context.WithoutCancel(ctx))
+		return nil, nil
+	})
+}
+
+// loadAssetTree fetches the asset dictionaries and their nodes, filters node
+// entryIds to the valid DataBridge entry set, and populates assetCache.
+func (d *Datasource) loadAssetTree(ctx context.Context) {
 	trees, err := d.catalogClient.ListAssetDictionaries(ctx)
 	if err != nil {
 		d.logger.Warn("Failed to load asset dictionaries for cache", "error", err)
@@ -192,24 +208,37 @@ func (d *Datasource) ensureAssetTreeCached(ctx context.Context) {
 	// Parent/binding model: a DataBridge entry's own id (CatalogEntry.ID) differs
 	// from its logical id (CatalogEntry.EntryID). Asset nodes reference the logical
 	// id, so the valid set must be keyed on GetLogicalID() — keying on .ID drops
-	// every node entry. ListEntries already scopes to sourceTypes=DataBridge.
-	allEntries, err := d.catalogClient.ListEntries(ctx, "", "")
+	// every node entry. getAllEntries serves the cached, DataBridge-scoped list.
+	allEntries, err := d.getAllEntries(ctx)
 	var validEntryIds map[string]bool
 	if err == nil {
 		validEntryIds = buildValidEntryIds(allEntries, d.settings.SourceConnectionId)
 	}
 
+	// Fetch each dictionary's nodes in parallel with bounded concurrency. Each
+	// goroutine writes a distinct trees[i], so no synchronization is needed.
+	const maxConcurrency = 8
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
 	for i := range trees {
-		flatNodes, err := d.catalogClient.ListAssetNodes(ctx, trees[i].ID)
-		if err != nil {
-			d.logger.Warn("Failed to fetch nodes for dictionary", "id", trees[i].ID, "error", err)
-			continue
-		}
-		trees[i].Nodes = buildNodeTree(flatNodes)
-		if validEntryIds != nil {
-			filterTreeEntryIds(trees[i].Nodes, validEntryIds)
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			flatNodes, err := d.catalogClient.ListAssetNodes(ctx, trees[i].ID)
+			if err != nil {
+				d.logger.Warn("Failed to fetch nodes for dictionary", "id", trees[i].ID, "error", err)
+				return
+			}
+			trees[i].Nodes = buildNodeTree(flatNodes)
+			if validEntryIds != nil {
+				filterTreeEntryIds(trees[i].Nodes, validEntryIds)
+			}
+		}(i)
 	}
+	wg.Wait()
 	d.assetCache.Set("all", trees)
 }
 
@@ -305,14 +334,16 @@ func buildNodeTree(flat []datacatalog.AssetNode) []datacatalog.AssetNode {
 }
 
 // getAssetPaths returns a cached map of entryId -> asset path string (e.g. "Plant > PostgreSQL > Counter").
-func (d *Datasource) getAssetPaths() map[string]string {
+// It runs on the query hot path, so the caller's ctx is threaded through to the
+// asset-tree load so query deadline/cancellation propagate.
+func (d *Datasource) getAssetPaths(ctx context.Context) map[string]string {
 	if paths, ok := d.assetPathCache.Get("all"); ok {
 		return paths
 	}
 
 	// Ensure asset tree is loaded
 	if d.catalogClient != nil {
-		d.ensureAssetTreeCached(context.Background())
+		d.ensureAssetTreeCached(ctx)
 	}
 
 	trees, ok := d.assetCache.Get("all")

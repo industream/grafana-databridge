@@ -115,8 +115,8 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		return backend.ErrDataResponse(backend.StatusBadRequest, "no catalog entries selected")
 	}
 
-	// Fetch entries from DataCatalog
-	entries, err := d.catalogClient.GetEntriesByIds(ctx, ids)
+	// Fetch entries, serving from the cached all-entries listing when possible.
+	entries, err := d.getEntriesByIds(ctx, ids)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, fmt.Sprintf("fetch entries: %v", err))
 	}
@@ -183,7 +183,7 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 		dr := d.executeAndConvert(ctx, t.bridgeUrl, t.databaseName, t.datasetName, query.RefID, recordsQuery)
 		if dr.Error == nil {
 			for _, frame := range dr.Frames {
-				d.applyDisplayNamesFromMap(frame, &subQd, entryMap, byColumn)
+				d.applyDisplayNamesFromMap(ctx, frame, &subQd, entryMap, byColumn)
 			}
 		}
 		return dr
@@ -217,7 +217,7 @@ func (d *Datasource) handleCatalogQuery(ctx context.Context, query backend.DataQ
 			}
 
 			for _, frame := range dr.Frames {
-				d.applyDisplayNamesFromMap(frame, &subQd, entryMap, byColumn)
+				d.applyDisplayNamesFromMap(ctx, frame, &subQd, entryMap, byColumn)
 			}
 			results[idx] = targetResult{frames: dr.Frames}
 		}(i, t)
@@ -390,7 +390,7 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	rq := &databridge.RecordsQuery{}
 
 	// Forward the query-time transform pipeline as-is (wrapper-object shape).
-	rq.Transforms = qd.Transforms
+	rq.Transforms = normalizeTransforms(qd.Transforms)
 
 	// An explicit resample buckets by time itself, so it replaces the automatic
 	// time_window downsampling below to avoid double-aggregation.
@@ -430,7 +430,7 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 				params = append(params, databridge.QueryParam{Column: "time"})
 			}
 			rq.Select = append(rq.Select, databridge.SelectClause{
-				Function:   agg,
+				Function:   normalizeAggregation(agg),
 				Parameters: params,
 				Alias:      aliasOrDefault(s.Alias, col+"_"+agg),
 			})
@@ -692,6 +692,37 @@ func compatibleAggregation(dataType string) string {
 	}
 }
 
+// normalizeAggregation maps UI/plugin aggregation names to the function names the
+// DataBridge API actually accepts. The editor historically offered "mean", which
+// DataBridge rejects with 422 UnknownFunction — it calls that function "avg".
+// Unknown names pass through unchanged.
+func normalizeAggregation(agg string) string {
+	switch agg {
+	case "mean":
+		return "avg"
+	default:
+		return agg
+	}
+}
+
+// normalizeTransforms returns a copy of the pipeline with resample aggregation
+// names normalized to DataBridge function names (see normalizeAggregation).
+func normalizeTransforms(ts []databridge.Transform) []databridge.Transform {
+	if ts == nil {
+		return nil
+	}
+	out := make([]databridge.Transform, len(ts))
+	copy(out, ts)
+	for i := range out {
+		if out[i].Resample != nil && out[i].Resample.Aggregation != "" {
+			r := *out[i].Resample
+			r.Aggregation = normalizeAggregation(r.Aggregation)
+			out[i].Resample = &r
+		}
+	}
+	return out
+}
+
 func aliasOrDefault(alias, fallback string) string {
 	if alias != "" {
 		return alias
@@ -700,7 +731,7 @@ func aliasOrDefault(alias, fallback string) string {
 }
 
 // applyDisplayNamesFromMap sets display names on frame fields using a pre-built entry map.
-func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.QueryDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) {
+func (d *Datasource) applyDisplayNamesFromMap(ctx context.Context, frame *data.Frame, qd *models.QueryDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) {
 	if len(qd.Select) == 0 {
 		return
 	}
@@ -727,7 +758,7 @@ func (d *Datasource) applyDisplayNamesFromMap(frame *data.Frame, qd *models.Quer
 	pattern := qd.DisplayNamePattern
 
 	// Load asset paths if needed for display name resolution
-	assetPaths := d.getAssetPaths()
+	assetPaths := d.getAssetPaths(ctx)
 
 	for _, field := range frame.Fields {
 		s, ok := selectByAlias[field.Name]

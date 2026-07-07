@@ -18,7 +18,7 @@ interface TransformsEditorProps {
 
 const LABEL_WIDTH = 18;
 
-const AGGREGATION_OPTIONS = ['mean', 'avg', 'sum', 'min', 'max', 'count', 'first', 'last'].map((v) => ({
+const AGGREGATION_OPTIONS = ['avg', 'sum', 'min', 'max', 'count', 'first', 'last'].map((v) => ({
   label: v,
   value: v,
 }));
@@ -60,7 +60,7 @@ export function TransformsEditor({ query, onUpdateAndRun }: TransformsEditorProp
           <InlineField label="Resample" labelWidth={LABEL_WIDTH} tooltip="Bucket by time and aggregate. Replaces the automatic Optimize-display downsampling when enabled.">
             <InlineSwitch
               value={resample !== undefined}
-              onChange={() => toggle('resample', resample === undefined, { every: 'PT1M', aggregation: 'mean' })}
+              onChange={() => toggle('resample', resample === undefined, { every: 'PT1M', aggregation: 'avg' })}
             />
           </InlineField>
           {resample !== undefined && (
@@ -77,7 +77,7 @@ export function TransformsEditor({ query, onUpdateAndRun }: TransformsEditorProp
                 <Combobox
                   width={14}
                   options={AGGREGATION_OPTIONS}
-                  value={(resample.aggregation as string) ?? 'mean'}
+                  value={(resample.aggregation as string) ?? 'avg'}
                   onChange={(o) => setTransform('resample', { ...resample, aggregation: o.value })}
                 />
               </InlineField>

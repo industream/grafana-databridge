@@ -20,7 +20,6 @@ const OPERATION_OPTIONS = [
   { label: 'Optimized', value: 'optimized' },
   { label: 'Raw', value: 'none' },
   { label: 'avg', value: 'avg' },
-  { label: 'mean', value: 'mean' },
   { label: 'min', value: 'min' },
   { label: 'max', value: 'max' },
   { label: 'sum', value: 'sum' },
@@ -31,14 +30,10 @@ const OPERATION_OPTIONS = [
   { label: 'last (time)', value: 'last_at' },
   { label: 'min (time)', value: 'min_at' },
   { label: 'max (time)', value: 'max_at' },
-  { label: 'std', value: 'std' },
   { label: 'stddev', value: 'stddev' },
   { label: 'stddev (pop)', value: 'stddev_pop' },
-  { label: 'stddev (samp)', value: 'stddev_samp' },
-  { label: 'var', value: 'var' },
   { label: 'variance', value: 'variance' },
-  { label: 'var (pop)', value: 'var_pop' },
-  { label: 'var (samp)', value: 'var_samp' },
+  { label: 'variance (pop)', value: 'var_pop' },
 ];
 
 export function SelectedTags({
