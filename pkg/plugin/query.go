@@ -453,7 +453,10 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 
 	// Build GROUP BY with time_window for optimize display, unless an explicit
 	// resample transform already handles time bucketing.
-	if qd.OptimizeDisplay && maxDataPoints > 0 && !hasResample {
+	// The Table strategy asks for a single reduction per signal over the whole range
+	// (count/sum are totals, min/max/avg span the full period), so it skips the automatic
+	// time_window downsampling that the Time Series strategy uses to draw a curve.
+	if qd.OptimizeDisplay && maxDataPoints > 0 && !hasResample && qd.Strategy != "table" {
 		windowSeconds := timeWindowToSeconds(qd.TimeWindowInterval, qd.TimeWindowUnit)
 		if windowSeconds <= 0 {
 			windowSeconds = computeTimeWindow(timeRange, maxDataPoints)
