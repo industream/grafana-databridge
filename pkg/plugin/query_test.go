@@ -114,6 +114,37 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 	}
 }
 
+func TestBuildRecordsQuery_TableStrategyReducesOverRange_NoTimeWindow(t *testing.T) {
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "table",
+		OptimizeDisplay: true,
+		Select: []models.SelectDefinition{
+			{Column: "temperature", Aggregation: "count"},
+			{Column: "humidity", Aggregation: "avg"},
+		},
+	}
+	now := time.Now()
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+	// Table strategy: one aggregate per signal over the whole range, NO time_window
+	// bucketing (so count/sum are totals over the period, not per-bucket values).
+	if len(rq.GroupBy) != 0 {
+		t.Errorf("table strategy must not group by time_window, got %+v", rq.GroupBy)
+	}
+	if len(rq.Select) != 2 {
+		t.Fatalf("expected 2 aggregate selects (no time_window), got %d", len(rq.Select))
+	}
+	for _, sc := range rq.Select {
+		if sc.Function == "time_window" {
+			t.Errorf("table strategy must not add a time_window select")
+		}
+	}
+	if rq.Select[0].Function != "count" || rq.Select[1].Function != "avg" {
+		t.Errorf("expected count/avg, got %s/%s", rq.Select[0].Function, rq.Select[1].Function)
+	}
+}
+
 func TestBuildRecordsQuery_RawMode(t *testing.T) {
 	qd := &models.QueryDefinition{
 		Mode:            "raw",
