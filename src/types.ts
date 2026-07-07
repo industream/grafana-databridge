@@ -4,7 +4,26 @@ import { DataQuery } from '@grafana/schema';
 // --- Query types ---
 
 export type QueryMode = 'dataCatalog' | 'raw';
-export type QueryStrategy = 'timeseries' | 'table';
+export type QueryStrategy = 'timeseries' | 'table' | 'stats';
+
+// Descriptive statistics computed per signal via DataBridge /records/stats
+// (scalar over the panel range). Mirror of StatsCalculator.SupportedStats.
+export type StatFunction = 'mean' | 'std' | 'variance' | 'min' | 'max' | 'sum' | 'count' | 'p25' | 'p50' | 'p75';
+
+export const STAT_OPTIONS: Array<{ label: string; value: StatFunction }> = [
+  { label: 'Mean', value: 'mean' },
+  { label: 'Std dev', value: 'std' },
+  { label: 'Variance', value: 'variance' },
+  { label: 'Min', value: 'min' },
+  { label: 'Max', value: 'max' },
+  { label: 'Sum', value: 'sum' },
+  { label: 'Count', value: 'count' },
+  { label: 'P25', value: 'p25' },
+  { label: 'Median (P50)', value: 'p50' },
+  { label: 'P75', value: 'p75' },
+];
+
+export const DEFAULT_STATS: StatFunction[] = ['mean', 'min', 'max', 'p50'];
 
 // Mirror of DataBridge KnownFunctions.cs (api-v2.3.0) — the parameterless
 // per-tag aggregations. Keep in sync with the backend's accepted set.
@@ -131,6 +150,9 @@ export interface DataBridgeQuery extends DataQuery {
 
   // Query-time transform pipeline (DataBridge v2.3.0)
   transforms?: Transform[];
+
+  // Statistics to compute when strategy === 'stats' (DataBridge /records/stats)
+  stats?: StatFunction[];
 }
 
 // --- Query-time transforms (DataBridge v2.3.0) ---

@@ -130,3 +130,16 @@ type RecordsResponse struct {
 	Columns []string        `json:"columns"`
 	Items   [][]interface{} `json:"items"`
 }
+
+// StatsQuery is the request body for POST /records/stats. An entry is a signal =
+// a column/_field (see DataBridge fix #96). MaxSamples is a cap (0 = API default).
+type StatsQuery struct {
+	Entries    []string `json:"entries"`
+	Start      string   `json:"start"`
+	End        string   `json:"end,omitempty"`
+	Compute    []string `json:"compute,omitempty"`
+	MaxSamples int      `json:"maxSamples,omitempty"`
+}
+
+// StatsResponse maps each entry (signal) to its computed {stat name: value}.
+type StatsResponse map[string]map[string]float64

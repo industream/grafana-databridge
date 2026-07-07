@@ -80,6 +80,23 @@ func (c *Client) QueryRecords(ctx context.Context, databaseName, datasetName str
 	return &result, nil
 }
 
+// ComputeStats computes descriptive statistics (mean, min, max, percentiles, ...) per
+// signal over a time range via POST /records/stats. Entries are signal columns/_fields.
+func (c *Client) ComputeStats(ctx context.Context, databaseName string, query *StatsQuery) (StatsResponse, error) {
+	params := url.Values{"databaseName": {databaseName}}
+
+	body, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("marshal stats query: %w", err)
+	}
+
+	var result StatsResponse
+	if err := c.post(ctx, "/records/stats", params, body, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // Ping checks connectivity to the DataBridge API.
 func (c *Client) Ping(ctx context.Context) error {
 	u, err := url.Parse(c.baseURL + "/databases")

@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/css';
-import { Combobox, Collapse, InlineField, InlineFieldRow, RadioButtonGroup, useStyles2 } from '@grafana/ui';
+import {
+  Combobox,
+  Collapse,
+  InlineField,
+  InlineFieldRow,
+  MultiCombobox,
+  RadioButtonGroup,
+  useStyles2,
+} from '@grafana/ui';
 import { GrafanaTheme2, QueryEditorProps, SelectableValue } from '@grafana/data';
 
 import { DataSource } from '../datasource';
@@ -11,9 +19,12 @@ import {
   DataBridgeQuery,
   DatabaseInfo,
   DatasetInfo,
+  DEFAULT_STATS,
   DisplayNamePreset,
   QueryMode,
   QueryStrategy,
+  STAT_OPTIONS,
+  StatFunction,
   SelectDefinition,
   SourceConnection,
   TagOperation,
@@ -39,6 +50,7 @@ const MODE_OPTIONS: Array<SelectableValue<QueryMode>> = [
 const STRATEGY_OPTIONS: Array<SelectableValue<QueryStrategy>> = [
   { label: 'Time Series', value: 'timeseries' },
   { label: 'Table', value: 'table' },
+  { label: 'Statistics', value: 'stats' },
 ];
 
 const LABEL_WIDTH = 16;
@@ -302,6 +314,27 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
           />
         </InlineField>
       </InlineFieldRow>
+
+      {/* Statistics strategy: pick which scalar stats to compute per signal */}
+      {query.strategy === 'stats' && (
+        <InlineFieldRow>
+          <InlineField
+            label="Statistics"
+            labelWidth={LABEL_WIDTH}
+            tooltip="Scalar statistics computed per selected signal over the panel time range (DataBridge /records/stats). Best shown in a Table or Stat panel."
+          >
+            <MultiCombobox
+              options={STAT_OPTIONS}
+              value={query.stats ?? DEFAULT_STATS}
+              onChange={(selected) =>
+                updateAndRun({ stats: selected.map((option) => option.value as StatFunction) })
+              }
+              placeholder="Select statistics..."
+              width={40}
+            />
+          </InlineField>
+        </InlineFieldRow>
+      )}
 
       {/* Safety banner */}
       <SafetyBanner

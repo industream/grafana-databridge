@@ -42,6 +42,12 @@ func (d *Datasource) handleQuery(ctx context.Context, query backend.DataQuery) b
 		mode = "dataCatalog"
 	}
 
+	// The stats strategy computes scalar statistics per signal (one row per signal)
+	// via /records/stats, independently of the raw/catalog time-series path.
+	if qd.Strategy == "stats" {
+		return d.handleStatsQuery(ctx, query, &qd)
+	}
+
 	switch mode {
 	case "raw":
 		return d.handleRawQuery(ctx, query, &qd)
