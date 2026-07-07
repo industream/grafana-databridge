@@ -425,8 +425,9 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 
 		if agg != "" && qd.OptimizeDisplay {
 			params := []databridge.QueryParam{{Column: col}}
-			// first/last require a second parameter (time column)
-			if agg == "first" || agg == "last" {
+			// first/last (value) and the *_at variants (time) all require a second
+			// [time] parameter, otherwise DataBridge returns 422 "requires 2 parameters".
+			if aggregationNeedsTimeParam(agg) {
 				params = append(params, databridge.QueryParam{Column: "time"})
 			}
 			rq.Select = append(rq.Select, databridge.SelectClause{
@@ -693,15 +694,27 @@ func compatibleAggregation(dataType string) string {
 }
 
 // normalizeAggregation maps UI/plugin aggregation names to the function names the
-// DataBridge API actually accepts. The editor historically offered "mean", which
-// DataBridge rejects with 422 UnknownFunction — it calls that function "avg".
-// Unknown names pass through unchanged.
+// DataBridge API actually accepts. DataBridge rejects "mean"/"variance" with 422
+// UnknownFunction — it calls those functions "avg"/"var". Unknown names pass through.
 func normalizeAggregation(agg string) string {
 	switch agg {
 	case "mean":
 		return "avg"
+	case "variance":
+		return "var"
 	default:
 		return agg
+	}
+}
+
+// aggregationNeedsTimeParam reports whether a function requires a second [time]
+// parameter: first/last (return the value) and the *_at variants (return the time).
+func aggregationNeedsTimeParam(agg string) bool {
+	switch agg {
+	case "first", "last", "first_at", "last_at", "min_at", "max_at":
+		return true
+	default:
+		return false
 	}
 }
 
