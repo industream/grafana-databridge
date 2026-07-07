@@ -64,6 +64,41 @@ func TestFormatDuration(t *testing.T) {
 	}
 }
 
+func TestBuildRecordsQuery_VarianceMapsToVar(t *testing.T) {
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "timeseries",
+		OptimizeDisplay: true,
+		Select:          []models.SelectDefinition{{Column: "t", Aggregation: "variance"}},
+	}
+	now := time.Now()
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+	// DataBridge knows the function as "var", not "variance".
+	if rq.Select[0].Function != "var" {
+		t.Errorf("variance should map to var, got %q", rq.Select[0].Function)
+	}
+}
+
+func TestBuildRecordsQuery_TimePositionalAggregatesGetTimeParam(t *testing.T) {
+	// first/last (value) and *_at (time) all require a second [time] parameter.
+	for _, agg := range []string{"first", "last", "first_at", "last_at", "min_at", "max_at"} {
+		qd := &models.QueryDefinition{
+			Mode:            "raw",
+			Strategy:        "timeseries",
+			OptimizeDisplay: true,
+			Select:          []models.SelectDefinition{{Column: "t", Aggregation: agg}},
+		}
+		now := time.Now()
+		rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+		params := rq.Select[0].Parameters
+		if len(params) != 2 || params[0].Column != "t" || params[1].Column != "time" {
+			t.Errorf("%s: expected params [t, time], got %+v", agg, params)
+		}
+	}
+}
+
 func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 	qd := &models.QueryDefinition{
 		Mode:            "raw",
