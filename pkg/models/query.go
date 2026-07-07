@@ -30,6 +30,9 @@ type QueryDefinition struct {
 	// Transforms is the query-time transform pipeline, sent by the frontend in the
 	// exact DataBridge wrapper-object shape and forwarded as-is to /records/query.
 	Transforms []databridge.Transform `json:"transforms,omitempty"`
+	// Stats is the list of statistics to compute when Strategy == "stats"
+	// (e.g. mean, p50, p75). Routed to POST /records/stats, one scalar per signal.
+	Stats []string `json:"stats,omitempty"`
 }
 
 // ParseWhere converts the raw JSON where field into a FilterDefinition.
