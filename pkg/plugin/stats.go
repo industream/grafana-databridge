@@ -105,7 +105,7 @@ func (d *Datasource) handleRawStatsQuery(ctx context.Context, query backend.Data
 		names[s.Column] = aliasOrDefault(s.Alias, s.Column)
 	}
 
-	rows, err := d.computeStatsRows(ctx, bridgeUrl, qd.DatabaseName, columns, statOrder, query.TimeRange, names)
+	rows, err := d.computeStatsRows(ctx, bridgeUrl, qd.DatabaseName, qd.DatasetName, columns, statOrder, query.TimeRange, names)
 	if err != nil {
 		return backend.ErrDataResponse(backend.StatusInternal, err.Error())
 	}
@@ -182,9 +182,9 @@ func (d *Datasource) handleCatalogStatsQuery(ctx context.Context, query backend.
 			names[s.Column] = d.statsDisplayName(preset, qd.DisplayNamePattern, s, entryMap, byColumn)
 		}
 
-		rows, err := d.computeStatsRows(ctx, t.bridgeUrl, t.databaseName, columns, statOrder, query.TimeRange, names)
+		rows, err := d.computeStatsRows(ctx, t.bridgeUrl, t.databaseName, t.datasetName, columns, statOrder, query.TimeRange, names)
 		if err != nil {
-			d.logger.Warn("Stats sub-query failed", "database", t.databaseName, "error", err)
+			d.logger.Warn("Stats sub-query failed", "database", t.databaseName, "dataset", t.datasetName, "error", err)
 			errs = append(errs, err.Error())
 			continue
 		}
@@ -207,15 +207,17 @@ func (d *Datasource) handleCatalogStatsQuery(ctx context.Context, query backend.
 
 // computeStatsRows runs one /records/stats call and maps the response to rows, one per
 // requested column, using the provided display names (falling back to the column).
-func (d *Datasource) computeStatsRows(ctx context.Context, bridgeUrl, databaseName string, columns, compute []string, timeRange backend.TimeRange, displayNames map[string]string) ([]statsRow, error) {
+func (d *Datasource) computeStatsRows(ctx context.Context, bridgeUrl, databaseName, datasetName string, columns, compute []string, timeRange backend.TimeRange, displayNames map[string]string) ([]statsRow, error) {
 	if len(columns) == 0 {
 		return nil, nil
 	}
 
 	client := d.dataBridgeClient(bridgeUrl)
-	resp, err := client.ComputeStats(ctx, databaseName, buildStatsQuery(columns, compute, timeRange))
+	// Scope to the dataset (measurement) so a field name shared across measurements isn't
+	// pooled into meaningless percentiles (DataBridge /records/stats honors datasetName).
+	resp, err := client.ComputeStats(ctx, databaseName, datasetName, buildStatsQuery(columns, compute, timeRange))
 	if err != nil {
-		return nil, fmt.Errorf("stats %s on %s: %w", databaseName, bridgeUrl, err)
+		return nil, fmt.Errorf("stats %s/%s on %s: %w", databaseName, datasetName, bridgeUrl, err)
 	}
 
 	rows := make([]statsRow, 0, len(columns))
