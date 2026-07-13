@@ -480,6 +480,25 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 		}
 	}
 
+	// Ensure a time column is selected so the frame has a time axis to plot. The
+	// time_window branch above adds an aliased "time"; when it did NOT run (raw
+	// columns, no aggregation → optimizeDisplay false), the SELECT holds only value
+	// columns and DataBridge returns no timestamp — a raw Time Series panel then has
+	// nothing to draw. Prepend the raw "time" column in that case. The Table strategy
+	// is a scalar reduction over the whole range (no time axis), so it is excluded.
+	if qd.Strategy != "table" && len(rq.Select) > 0 {
+		hasTimeSelect := false
+		for _, s := range rq.Select {
+			if s.Column == "time" || s.Alias == "time" {
+				hasTimeSelect = true
+				break
+			}
+		}
+		if !hasTimeSelect {
+			rq.Select = append([]databridge.SelectClause{{Column: "time"}}, rq.Select...)
+		}
+	}
+
 	// ORDER BY — use the time alias from time_window when in optimize mode
 	orderCol := qd.OrderByColumn
 	orderDir := qd.OrderByDirection

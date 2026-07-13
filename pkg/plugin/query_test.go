@@ -149,6 +149,36 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 	}
 }
 
+func TestBuildRecordsQuery_RawNoAggregation_SelectsTimeColumn(t *testing.T) {
+	// Raw time series (no aggregation → optimizeDisplay false) skips the time_window
+	// branch. Without an explicit time column DataBridge returns only values, so the
+	// frame has no time axis and the panel draws nothing. A raw "time" must be selected.
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "timeseries",
+		OptimizeDisplay: false,
+		Select: []models.SelectDefinition{
+			{Column: "temperature", Aggregation: "none"},
+		},
+	}
+
+	now := time.Now()
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+	if len(rq.Select) == 0 || rq.Select[0].Column != "time" {
+		t.Fatalf("expected a raw time column first in select, got %+v", rq.Select)
+	}
+	hasValue := false
+	for _, s := range rq.Select {
+		if s.Column == "temperature" {
+			hasValue = true
+		}
+	}
+	if !hasValue {
+		t.Errorf("value column dropped; select=%+v", rq.Select)
+	}
+}
+
 func TestBuildRecordsQuery_TableStrategyReducesOverRange_NoTimeWindow(t *testing.T) {
 	qd := &models.QueryDefinition{
 		Mode:            "raw",
@@ -206,12 +236,22 @@ func TestBuildRecordsQuery_RawMode(t *testing.T) {
 		t.Errorf("expected limit 1000, got %d", rq.Limit)
 	}
 
-	// Select should be plain column (no function)
-	if rq.Select[0].Function != "" {
-		t.Errorf("expected no function in raw mode, got %s", rq.Select[0].Function)
+	// A raw time series prepends the time column (axis), then the plain value column.
+	if rq.Select[0].Column != "time" {
+		t.Errorf("expected time as first (axis) column, got %s", rq.Select[0].Column)
 	}
-	if rq.Select[0].Column != "temperature" {
-		t.Errorf("expected column 'temperature', got %s", rq.Select[0].Column)
+	// The value column should be plain (no function) in raw mode.
+	var value *databridge.SelectClause
+	for i := range rq.Select {
+		if rq.Select[i].Column == "temperature" {
+			value = &rq.Select[i]
+		}
+	}
+	if value == nil {
+		t.Fatalf("temperature column missing from select %+v", rq.Select)
+	}
+	if value.Function != "" {
+		t.Errorf("expected no function in raw mode, got %s", value.Function)
 	}
 }
 
