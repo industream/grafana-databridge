@@ -82,8 +82,13 @@ func (c *Client) QueryRecords(ctx context.Context, databaseName, datasetName str
 
 // ComputeStats computes descriptive statistics (mean, min, max, percentiles, ...) per
 // signal over a time range via POST /records/stats. Entries are signal columns/_fields.
-func (c *Client) ComputeStats(ctx context.Context, databaseName string, query *StatsQuery) (StatsResponse, error) {
+// datasetName scopes the stats to a single dataset (measurement) so a field name shared
+// across measurements is not pooled; pass "" to keep the legacy whole-database behavior.
+func (c *Client) ComputeStats(ctx context.Context, databaseName, datasetName string, query *StatsQuery) (StatsResponse, error) {
 	params := url.Values{"databaseName": {databaseName}}
+	if datasetName != "" {
+		params.Set("datasetName", datasetName)
+	}
 
 	body, err := json.Marshal(query)
 	if err != nil {
