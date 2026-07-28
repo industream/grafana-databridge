@@ -4,7 +4,13 @@ import { DataQuery } from '@grafana/schema';
 // --- Query types ---
 
 export type QueryMode = 'dataCatalog' | 'raw';
-export type QueryStrategy = 'timeseries' | 'table' | 'stats';
+// 'raw' (strategy) returns unaggregated, per-record rows — no time bucketing, no
+// per-column reduction — suited for discrete event tables (event_id, occurred_at,
+// equipment, payload, ...). This is distinct from QueryMode 'raw' (connection/
+// database/dataset selection instead of DataCatalog signals); the two combine
+// freely, e.g. mode: 'raw' + strategy: 'raw' for a raw events table over a raw
+// DataBridge dataset. Mirror of the backend's Strategy switch in pkg/plugin/query.go.
+export type QueryStrategy = 'timeseries' | 'table' | 'stats' | 'raw';
 
 // Descriptive statistics computed per signal via DataBridge /records/stats
 // (scalar over the panel range). Mirror of StatsCalculator.SupportedStats.

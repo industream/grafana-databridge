@@ -210,6 +210,75 @@ func TestBuildRecordsQuery_TableStrategyReducesOverRange_NoTimeWindow(t *testing
 	}
 }
 
+func TestBuildRecordsQuery_RawStrategy_NoAggregation(t *testing.T) {
+	// Raw strategy: discrete event rows (event_id, event_type, equipment, payload...),
+	// no reduction, no time bucketing — one output row per DataBridge record.
+	// Aggregation is set on one column on purpose to prove it gets ignored, and
+	// string-typed columns are included to prove they don't trigger the
+	// isAggregationCompatible/compatibleAggregation fallback path used by other
+	// strategies (which would be wrong here: raw strategy never aggregates).
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "raw",
+		OptimizeDisplay: false,
+		Select: []models.SelectDefinition{
+			{Column: "event_id", DataType: "string", Aggregation: "avg"},
+			{Column: "event_type", DataType: "string"},
+			{Column: "equipment", DataType: "string"},
+			{Column: "payload", DataType: "string"},
+		},
+		Limit: 500,
+	}
+	now := time.Now()
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+	if len(rq.GroupBy) != 0 {
+		t.Errorf("raw strategy must not group by time_window, got %+v", rq.GroupBy)
+	}
+
+	wantCols := []string{"time", "event_id", "event_type", "equipment", "payload"}
+	if len(rq.Select) != len(wantCols) {
+		t.Fatalf("expected %d select clauses (time + 4 raw columns), got %d: %+v", len(wantCols), len(rq.Select), rq.Select)
+	}
+	for i, col := range wantCols {
+		if rq.Select[i].Column != col {
+			t.Errorf("select[%d]: expected column %q, got %q", i, col, rq.Select[i].Column)
+		}
+		if rq.Select[i].Function != "" {
+			t.Errorf("select[%d] (%s): expected no aggregation function, got %q", i, col, rq.Select[i].Function)
+		}
+	}
+
+	if rq.Limit != 500 {
+		t.Errorf("expected limit 500, got %d", rq.Limit)
+	}
+}
+
+func TestBuildRecordsQuery_RawStrategy_IgnoresStaleOptimizeDisplayFlag(t *testing.T) {
+	// Defense in depth: even if a stale/misconfigured query still carries
+	// OptimizeDisplay=true (e.g. from a saved dashboard), the raw strategy must
+	// still skip time_window bucketing and per-column aggregation.
+	qd := &models.QueryDefinition{
+		Mode:            "raw",
+		Strategy:        "raw",
+		OptimizeDisplay: true,
+		Select: []models.SelectDefinition{
+			{Column: "temperature", DataType: "float64", Aggregation: "avg"},
+		},
+	}
+	now := time.Now()
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: now.Add(-time.Hour), To: now}, 1000)
+
+	if len(rq.GroupBy) != 0 {
+		t.Errorf("raw strategy must not group by time_window even if optimizeDisplay=true, got %+v", rq.GroupBy)
+	}
+	for _, sc := range rq.Select {
+		if sc.Function != "" {
+			t.Errorf("raw strategy must ignore per-column aggregation, got select clause %+v", sc)
+		}
+	}
+}
+
 func TestBuildRecordsQuery_RawMode(t *testing.T) {
 	qd := &models.QueryDefinition{
 		Mode:            "raw",

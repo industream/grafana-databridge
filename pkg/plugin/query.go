@@ -373,9 +373,12 @@ func (d *Datasource) executeAndConvert(ctx context.Context, bridgeUrl, databaseN
 	return dr
 }
 
-// applySafetyLimits enforces row limits for raw queries.
+// applySafetyLimits enforces row limits for raw (unaggregated) queries.
 func (d *Datasource) applySafetyLimits(qd *models.QueryDefinition, timeRange backend.TimeRange) {
-	if qd.OptimizeDisplay {
+	// The raw strategy never aggregates (see buildRecordsQuery), so it always needs
+	// the row-count safety check even if a stale/misconfigured query still carries
+	// OptimizeDisplay=true.
+	if qd.OptimizeDisplay && qd.Strategy != "raw" {
 		return
 	}
 	estimatedRows := estimateRawRows(timeRange, len(qd.Select))
@@ -406,6 +409,15 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	for _, s := range qd.Select {
 		col := s.Column
 		if col == "" {
+			continue
+		}
+
+		// Raw strategy: plain passthrough columns, no aggregation at all — the whole
+		// point of this strategy is unaggregated event/data rows (one row per record).
+		// This intentionally ignores both the per-column Aggregation choice and
+		// OptimizeDisplay, so a stale/misconfigured query can't sneak a GROUP BY in.
+		if qd.Strategy == "raw" {
+			rq.Select = append(rq.Select, databridge.SelectClause{Column: col})
 			continue
 		}
 
@@ -456,7 +468,7 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	// The Table strategy asks for a single reduction per signal over the whole range
 	// (count/sum are totals, min/max/avg span the full period), so it skips the automatic
 	// time_window downsampling that the Time Series strategy uses to draw a curve.
-	if qd.OptimizeDisplay && maxDataPoints > 0 && !hasResample && qd.Strategy != "table" {
+	if qd.OptimizeDisplay && maxDataPoints > 0 && !hasResample && qd.Strategy != "table" && qd.Strategy != "raw" {
 		windowSeconds := timeWindowToSeconds(qd.TimeWindowInterval, qd.TimeWindowUnit)
 		if windowSeconds <= 0 {
 			windowSeconds = computeTimeWindow(timeRange, maxDataPoints)
@@ -486,6 +498,8 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 	// columns and DataBridge returns no timestamp — a raw Time Series panel then has
 	// nothing to draw. Prepend the raw "time" column in that case. The Table strategy
 	// is a scalar reduction over the whole range (no time axis), so it is excluded.
+	// The Raw strategy returns individual event/data rows and needs a timestamp per
+	// row to sort/inspect by, so it deliberately falls through here (not excluded).
 	if qd.Strategy != "table" && len(rq.Select) > 0 {
 		hasTimeSelect := false
 		for _, s := range rq.Select {
@@ -899,3 +913,53 @@ func buildFieldDescription(entry *datacatalog.CatalogEntry) string {
 
 	return strings.Join(parts, " | ")
 }
+
+// --- Stretch goal design note: event annotations (NOT implemented) ---
+//
+// Goal: overlay discrete events (the same event_id/event_type/occurred_at/equipment
+// rows the 'raw' strategy exposes as a table) as markers on existing Time Series
+// panels, using Grafana's native annotation query support.
+//
+// What it would take:
+//
+//  1. src/plugin.json — add `"annotations": true`. This tells Grafana this data
+//     source can answer annotation queries, which adds an "Annotations & Alerts"
+//     tab wherever a DataBridgeQuery is picked (dashboard settings > Annotations,
+//     and inline in Explore/panel annotation queries).
+//
+//  2. Backend — grafana-plugin-sdk-go dispatches annotation queries as regular
+//     QueryData calls carrying a special "annotations" query type in recent SDK
+//     versions (backend.QueryDataRequest with query.QueryType == "annotations"),
+//     NOT a separate interface to implement. So the plumbing is:
+//       - In handleQuery (top of this file), branch on query.QueryType == "annotations"
+//         before the existing mode/strategy dispatch.
+//       - Reuse buildRecordsQuery with Strategy: "raw" under the hood — an
+//         annotation query IS a raw-events query, just shaped differently on
+//         the way out.
+//       - Convert the resulting *data.Frame into Grafana's annotation frame
+//         shape instead of a generic table/timeseries frame: fields named
+//         "time" (from occurred_at), "text" (from event_type, or a formatted
+//         string built from event_type+equipment), and optionally "tags"
+//         ([]string, e.g. equipment or event_type used as a filter tag). See
+//         data.NewFrame with FrameMeta.Custom / the "annotation" frame
+//         convention Grafana's annotation list panel expects — this needs
+//         verifying against the current grafana-plugin-sdk-go annotation
+//         frame contract at implementation time, it has changed across SDK
+//         versions and I have not run this against a live Grafana instance.
+//
+//  3. Frontend — QueryEditor would need an "Annotation" mode/affordance so a
+//     user can pick which raw dataset + which columns map to time/text/tags
+//     when configuring a dashboard annotation query (Grafana calls the query
+//     editor in a slightly different context for annotations; some datasources
+//     render a cut-down editor, e.g. by checking a `context.type === 'annotation'`
+//     — needs checking against the @grafana/data QueryEditorProps actually
+//     passed in that flow, again not verified here).
+//
+// Why this is a stretch, not attempted: the frame-shape contract for
+// annotations (which exact field names / meta Grafana's annotation renderer
+// expects) is the one part of this whole task I could not verify without a
+// running Grafana instance and a real annotation-enabled panel to inspect the
+// request/response against — getting it wrong is a silent "no markers show up"
+// failure, not a compile or type error. The raw-events plumbing above (item 2)
+// is otherwise a small, mostly mechanical change once the frame shape is
+// confirmed.

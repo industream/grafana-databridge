@@ -3,12 +3,18 @@ import { css } from '@emotion/css';
 import { Badge, Combobox, IconButton, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
 
-import { ColumnInfo, SelectDefinition, TagOperation } from '../types';
+import { ColumnInfo, QueryStrategy, SelectDefinition, TagOperation } from '../types';
 import { dataTypeColor } from '../utils/colors';
 
 interface RawColumnSelectorProps {
   columns: ColumnInfo[];
   select: SelectDefinition[];
+  /**
+   * When 'raw', every column is a plain passthrough (no aggregation, no time
+   * bucketing — one row per record) so the per-column aggregation picker is
+   * replaced by a static "Raw" indicator instead of an interactive control.
+   */
+  strategy?: QueryStrategy;
   onToggleColumn: (column: ColumnInfo) => void;
   onRemove: (index: number) => void;
   onAggregationChange: (index: number, operation: TagOperation) => void;
@@ -33,12 +39,14 @@ const OPERATION_OPTIONS = [
 export function RawColumnSelector({
   columns,
   select,
+  strategy,
   onToggleColumn,
   onRemove,
   onAggregationChange,
 }: RawColumnSelectorProps) {
   const styles = useStyles2(getStyles);
 
+  const isRawStrategy = strategy === 'raw';
   const selectedColumns = new Set(select.map((s) => s.column));
 
   // Filter out time column — it's always included automatically
@@ -72,12 +80,20 @@ export function RawColumnSelector({
               <span className={styles.tagName}>{item.column}</span>
               <span className={styles.typeLabel}>{item.dataType}</span>
 
-              <Combobox
-                options={OPERATION_OPTIONS}
-                value={item.aggregation ?? 'optimized'}
-                onChange={(option) => onAggregationChange(index, option.value as TagOperation)}
-                width={12}
-              />
+              {isRawStrategy ? (
+                <Badge
+                  text="Raw (no aggregation)"
+                  color="darkgrey"
+                  tooltip="Raw Events strategy always returns unaggregated rows — per-column aggregation is disabled."
+                />
+              ) : (
+                <Combobox
+                  options={OPERATION_OPTIONS}
+                  value={item.aggregation ?? 'optimized'}
+                  onChange={(option) => onAggregationChange(index, option.value as TagOperation)}
+                  width={12}
+                />
+              )}
 
               <IconButton name="times" tooltip="Remove" onClick={() => onRemove(index)} size="sm" />
             </div>

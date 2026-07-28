@@ -51,6 +51,7 @@ const STRATEGY_OPTIONS: Array<SelectableValue<QueryStrategy>> = [
   { label: 'Time Series', value: 'timeseries' },
   { label: 'Table', value: 'table' },
   { label: 'Statistics', value: 'stats' },
+  { label: 'Raw Events', value: 'raw' },
 ];
 
 const LABEL_WIDTH = 16;
@@ -77,14 +78,19 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
 
   const columnCount = (query.select ?? []).length || 1;
 
-  // Derive optimizeDisplay from tags: true if any tag is not 'none'
+  // Derive optimizeDisplay from tags: true if any tag is not 'none'.
+  // The Raw Events strategy never aggregates — it always returns one row per
+  // record — so it forces optimizeDisplay off regardless of per-column choices.
   const optimizeDisplay = useMemo(() => {
+    if (query.strategy === 'raw') {
+      return false;
+    }
     const select = query.select ?? [];
     if (select.length === 0) {
       return true;
     }
     return select.some((s) => (s.aggregation ?? 'optimized') !== 'none');
-  }, [query.select]);
+  }, [query.select, query.strategy]);
 
   // Detect multi-dataset: WHERE filters are disabled when tags span different datasets
   const isMultiDataset = useMemo(() => {
@@ -219,26 +225,27 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
         const nextSelect = currentSelect.filter((s) => s.catalogEntryId !== entry.id);
         updateAndRun({ select: nextSelect });
       } else {
+        const isRawStrategy = query.strategy === 'raw';
         const newItem: SelectDefinition = {
           catalogEntryId: entry.id,
           column: entry.sourceParams?.column ?? entry.name,
           dataType: entry.dataType,
-          aggregation: 'optimized',
+          aggregation: isRawStrategy ? 'none' : 'optimized',
         };
-        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: true });
+        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: !isRawStrategy });
       }
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   const handleRemoveTag = useCallback(
     (index: number) => {
       const nextSelect = [...(query.select ?? [])];
       nextSelect.splice(index, 1);
-      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      const hasAggregation = query.strategy !== 'raw' && nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
       updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   const handleAggregationChange = useCallback(
@@ -246,10 +253,10 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
       const nextSelect = [...(query.select ?? [])];
       nextSelect[index] = { ...nextSelect[index], aggregation: operation };
       // Derive optimizeDisplay for the backend
-      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      const hasAggregation = query.strategy !== 'raw' && nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
       updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   // --- Raw mode column handlers ---
@@ -259,40 +266,42 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
       const currentSelect = query.select ?? [];
       const existingIndex = currentSelect.findIndex((s) => s.column === column.name);
 
+      const isRawStrategy = query.strategy === 'raw';
+
       if (existingIndex >= 0) {
         const nextSelect = currentSelect.filter((_, i) => i !== existingIndex);
-        const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+        const hasAggregation = !isRawStrategy && nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
         updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation || nextSelect.length === 0 });
       } else {
         const newItem: SelectDefinition = {
           column: column.name,
           dataType: column.type,
-          aggregation: 'optimized',
+          aggregation: isRawStrategy ? 'none' : 'optimized',
         };
-        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: true });
+        updateAndRun({ select: [...currentSelect, newItem], optimizeDisplay: !isRawStrategy });
       }
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   const handleRemoveRawColumn = useCallback(
     (index: number) => {
       const nextSelect = [...(query.select ?? [])];
       nextSelect.splice(index, 1);
-      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      const hasAggregation = query.strategy !== 'raw' && nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
       updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation || nextSelect.length === 0 });
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   const handleRawAggregationChange = useCallback(
     (index: number, operation: TagOperation) => {
       const nextSelect = [...(query.select ?? [])];
       nextSelect[index] = { ...nextSelect[index], aggregation: operation };
-      const hasAggregation = nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
+      const hasAggregation = query.strategy !== 'raw' && nextSelect.some((s) => (s.aggregation ?? 'optimized') !== 'none');
       updateAndRun({ select: nextSelect, optimizeDisplay: hasAggregation });
     },
-    [query.select, updateAndRun]
+    [query.select, query.strategy, updateAndRun]
   );
 
   return (
@@ -439,6 +448,7 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, range }: 
             <RawColumnSelector
               columns={schemaColumns}
               select={query.select ?? []}
+              strategy={query.strategy}
               onToggleColumn={handleToggleRawColumn}
               onRemove={handleRemoveRawColumn}
               onAggregationChange={handleRawAggregationChange}
