@@ -14,6 +14,9 @@ import (
 
 const entriesPageSize = 1000
 
+// maxEntriesPages bounds ListEntries (100k entries) against a bogus totalCount.
+const maxEntriesPages = 100
+
 // Client communicates with the DataCatalog REST API.
 type Client struct {
 	baseURL    string
@@ -62,6 +65,9 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 	// totalCount counts parent entries, the unit limit/offset page over; items are
 	// flattened per binding, so their length cannot drive the loop.
 	for offset := 0; ; offset += entriesPageSize {
+		if offset >= maxEntriesPages*entriesPageSize {
+			return nil, fmt.Errorf("list catalog entries: more than %d pages, totalCount looks wrong", maxEntriesPages)
+		}
 		params.Set("offset", strconv.Itoa(offset))
 		var resp PaginatedResponse[CatalogEntry]
 		if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {

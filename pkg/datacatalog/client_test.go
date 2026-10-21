@@ -105,6 +105,23 @@ func TestListEntries_StopsWhenServerIgnoresOffset(t *testing.T) {
 	}
 }
 
+func TestListEntries_ReturnsErrorPastThePageCapWhenTotalCountIsBogus(t *testing.T) {
+	var requestCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"items":[{"id":"entry-%s"}],"totalCount":2147483647}`, r.URL.Query().Get("offset"))
+	}))
+	defer srv.Close()
+
+	if _, err := NewClient(srv.URL, "").ListEntries(context.Background(), "", ""); err == nil {
+		t.Fatal("ListEntries returned nil error, want the page cap error")
+	}
+	if requestCount.Load() != maxEntriesPages {
+		t.Errorf("sent %d requests, want %d", requestCount.Load(), maxEntriesPages)
+	}
+}
+
 func TestListEntries_ReturnsErrorWhenALaterPageFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("offset") != "0" {
