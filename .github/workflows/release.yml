@@ -34,6 +34,10 @@ jobs:
           #   go: go.mod requires go >= 1.25.7 (running go 1.21.13; GOTOOLCHAIN=local)
           # Bump together with go.mod.
           go-version: "1.25"
+          # Match .nvmrc and ci.yml. The action defaults to Node 20, whose npm
+          # fails preparing @grafana/ui's git dependency react-data-grid with
+          # "Cannot read properties of null (reading 'edgesOut')" (v1.2.1).
+          node-version: "22"
         # Uncomment to enable plugin signing
         # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
         #  # Make sure to save the token in your repository secrets
