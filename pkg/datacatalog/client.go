@@ -7,9 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
+
+const entriesPageSize = 1000
+
+// maxEntriesPages bounds ListEntries (100k entries) against a bogus totalCount.
+const maxEntriesPages = 100
 
 // Client communicates with the DataCatalog REST API.
 type Client struct {
@@ -52,13 +58,32 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 		params.Set("search", search)
 	}
 	params.Set("sourceTypes", "DataBridge")
-	params.Set("limit", "1000")
+	params.Set("limit", strconv.Itoa(entriesPageSize))
 
-	var resp PaginatedResponse[CatalogEntry]
-	if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {
-		return nil, err
+	var entries []CatalogEntry
+	previousFirstID := ""
+	// totalCount counts parent entries, the unit limit/offset page over; items are
+	// flattened per binding, so their length cannot drive the loop.
+	for offset := 0; ; offset += entriesPageSize {
+		if offset >= maxEntriesPages*entriesPageSize {
+			return nil, fmt.Errorf("list catalog entries: more than %d pages, totalCount looks wrong", maxEntriesPages)
+		}
+		params.Set("offset", strconv.Itoa(offset))
+		var resp PaginatedResponse[CatalogEntry]
+		if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {
+			return nil, fmt.Errorf("list catalog entries at offset %d: %w", offset, err)
+		}
+		// A server that ignores offset returns the first page again: stop instead
+		// of duplicating it until totalCount.
+		if len(resp.Items) == 0 || resp.Items[0].ID == previousFirstID {
+			return entries, nil
+		}
+		entries = append(entries, resp.Items...)
+		if offset+entriesPageSize >= resp.TotalCount {
+			return entries, nil
+		}
+		previousFirstID = resp.Items[0].ID
 	}
-	return resp.Items, nil
 }
 
 // GetEntriesByIds fetches catalog entries by their IDs, filtered to DataBridge bindings only.
