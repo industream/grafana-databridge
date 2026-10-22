@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -135,5 +137,118 @@ func TestListEntries_ReturnsErrorWhenALaterPageFails(t *testing.T) {
 
 	if _, err := NewClient(srv.URL, "").ListEntries(context.Background(), "", ""); err == nil {
 		t.Fatal("ListEntries returned nil error, want the page error")
+	}
+}
+
+// newFilteringCatalogServer records each request's URL and serves /labels plus
+// a one-entry page for every other path. The returned func snapshots the URLs.
+func newFilteringCatalogServer(t *testing.T, labelsJSON string) (*httptest.Server, func() []*url.URL) {
+	t.Helper()
+	var mutex sync.Mutex
+	var requests []*url.URL
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mutex.Lock()
+		requests = append(requests, r.URL)
+		mutex.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/labels" {
+			_, _ = w.Write([]byte(labelsJSON))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[{"id":"entry-0"}],"totalCount":1}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() []*url.URL {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return append([]*url.URL(nil), requests...)
+	}
+}
+
+func TestListEntries_UsesSearchEndpointWithQueryWhenSearchIsSet(t *testing.T) {
+	srv, recordedRequests := newFilteringCatalogServer(t, `{"items":[]}`)
+
+	entries, err := NewClient(srv.URL, "").ListEntries(context.Background(), "", "temp")
+	if err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+
+	requests := recordedRequests()
+	last := requests[len(requests)-1]
+	if last.Path != "/catalog-entries/search" {
+		t.Errorf("path = %q, want /catalog-entries/search", last.Path)
+	}
+	if got := last.Query().Get("q"); got != "temp" {
+		t.Errorf("q = %q, want temp", got)
+	}
+	if got := last.Query().Get("sourceTypes"); got != "DataBridge" {
+		t.Errorf("sourceTypes = %q, want DataBridge", got)
+	}
+	if len(entries) != 1 {
+		t.Errorf("got %d entries, want 1", len(entries))
+	}
+}
+
+func TestListEntries_ResolvesLabelNameToLabelIdForSearch(t *testing.T) {
+	srv, recordedRequests := newFilteringCatalogServer(t, `{"items":[{"id":"label-analog","name":"Analog"}]}`)
+
+	if _, err := NewClient(srv.URL, "").ListEntries(context.Background(), "analog", ""); err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+
+	requests := recordedRequests()
+	last := requests[len(requests)-1]
+	if last.Path != "/catalog-entries/search" {
+		t.Errorf("path = %q, want /catalog-entries/search", last.Path)
+	}
+	if got := last.Query().Get("labelIds"); got != "label-analog" {
+		t.Errorf("labelIds = %q, want label-analog", got)
+	}
+	if !last.Query().Has("q") {
+		t.Error("q is missing; /catalog-entries/search rejects a request without it")
+	}
+}
+
+func TestListEntries_AcceptsLabelIdForSearch(t *testing.T) {
+	srv, recordedRequests := newFilteringCatalogServer(t, `{"items":[{"id":"label-analog","name":"Analog"}]}`)
+
+	if _, err := NewClient(srv.URL, "").ListEntries(context.Background(), "label-analog", ""); err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+
+	requests := recordedRequests()
+	if got := requests[len(requests)-1].Query().Get("labelIds"); got != "label-analog" {
+		t.Errorf("labelIds = %q, want label-analog", got)
+	}
+}
+
+func TestListEntries_ReturnsNoEntriesForUnknownLabel(t *testing.T) {
+	srv, recordedRequests := newFilteringCatalogServer(t, `{"items":[{"id":"label-analog","name":"Analog"}]}`)
+
+	entries, err := NewClient(srv.URL, "").ListEntries(context.Background(), "digital", "")
+	if err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("got %d entries, want 0", len(entries))
+	}
+	for _, request := range recordedRequests() {
+		if request.Path != "/labels" {
+			t.Errorf("unexpected request to %s; an unknown label must not list entries", request.Path)
+		}
+	}
+}
+
+func TestListEntries_KeepsListEndpointWithoutFilters(t *testing.T) {
+	srv, recordedRequests := newFilteringCatalogServer(t, `{"items":[]}`)
+
+	if _, err := NewClient(srv.URL, "").ListEntries(context.Background(), "", ""); err != nil {
+		t.Fatalf("ListEntries returned error: %v", err)
+	}
+
+	requests := recordedRequests()
+	if len(requests) != 1 || requests[0].Path != "/catalog-entries" {
+		t.Errorf("requests = %v, want a single /catalog-entries call", requests)
 	}
 }
