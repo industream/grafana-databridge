@@ -48,18 +48,48 @@ func (c *Client) ListConnections(ctx context.Context) ([]SourceConnection, error
 	return resp.Items, nil
 }
 
-// ListEntries returns catalog entries with optional filtering.
+// ListEntries returns DataBridge catalog entries, optionally filtered by a label
+// (name or id) and a case-insensitive name search.
 func (c *Client) ListEntries(ctx context.Context, label, search string) ([]CatalogEntry, error) {
 	params := url.Values{}
-	if label != "" {
-		params.Set("label", label)
-	}
-	if search != "" {
-		params.Set("search", search)
-	}
 	params.Set("sourceTypes", "DataBridge")
-	params.Set("limit", strconv.Itoa(entriesPageSize))
+	if label == "" && search == "" {
+		return c.listEntryPages(ctx, "/catalog-entries", params)
+	}
 
+	// GET /catalog-entries ignores label and search. /search requires q; an
+	// empty q matches every name.
+	params.Set("q", search)
+	if label != "" {
+		labelID, err := c.resolveLabelID(ctx, label)
+		if err != nil {
+			return nil, err
+		}
+		if labelID == "" {
+			return nil, nil
+		}
+		params.Set("labelIds", labelID)
+	}
+	return c.listEntryPages(ctx, "/catalog-entries/search", params)
+}
+
+// resolveLabelID returns the id of the label whose id or name (case-insensitive)
+// matches label, or "" when none does.
+func (c *Client) resolveLabelID(ctx context.Context, label string) (string, error) {
+	labels, err := c.ListLabels(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve label %q: %w", label, err)
+	}
+	for _, l := range labels {
+		if l.ID == label || strings.EqualFold(l.Name, label) {
+			return l.ID, nil
+		}
+	}
+	return "", nil
+}
+
+func (c *Client) listEntryPages(ctx context.Context, path string, params url.Values) ([]CatalogEntry, error) {
+	params.Set("limit", strconv.Itoa(entriesPageSize))
 	var entries []CatalogEntry
 	previousFirstID := ""
 	// totalCount counts parent entries, the unit limit/offset page over; items are
@@ -70,7 +100,7 @@ func (c *Client) ListEntries(ctx context.Context, label, search string) ([]Catal
 		}
 		params.Set("offset", strconv.Itoa(offset))
 		var resp PaginatedResponse[CatalogEntry]
-		if err := c.get(ctx, "/catalog-entries", params, &resp); err != nil {
+		if err := c.get(ctx, path, params, &resp); err != nil {
 			return nil, fmt.Errorf("list catalog entries at offset %d: %w", offset, err)
 		}
 		// A server that ignores offset returns the first page again: stop instead
