@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -235,5 +236,26 @@ func TestApplyDisplayNames_ColumnResolvedKeepsMetadata(t *testing.T) {
 	}
 	if fc.Thresholds == nil {
 		t.Error("expected thresholds from min/max via column fallback")
+	}
+}
+
+func TestApplyDisplayNames_DescriptionPresetFollowsTheViewerLanguage(t *testing.T) {
+	d := newTestDatasource()
+	entry := dbEntry("id-counter", "Parts counter", fallbackTestColumn, "B040", "JB010")
+	entry.Metadata = &datacatalog.CatalogMetadata{
+		DescriptionRaw: json.RawMessage(`{"en-US":"Parts counter","de-DE":"Stückzähler"}`),
+	}
+	byColumn := map[string]*datacatalog.CatalogEntry{fallbackTestColumn: entry}
+	qd := &models.QueryDefinition{
+		DisplayNamePreset: "description",
+		UserLocale:        "de-DE",
+		Select:            []models.SelectDefinition{{Column: fallbackTestColumn, DataType: "double"}},
+	}
+	frame := data.NewFrame("test", data.NewField(fallbackTestColumn, nil, []float64{1}))
+
+	d.applyDisplayNamesFromMap(context.Background(), frame, qd, map[string]*datacatalog.CatalogEntry{}, byColumn)
+
+	if got := frame.Fields[0].Config.DisplayNameFromDS; got != "Stückzähler" {
+		t.Errorf("expected the German description, got %q", got)
 	}
 }

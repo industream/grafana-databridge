@@ -1,5 +1,5 @@
 import { CoreApp, DataSourceInstanceSettings, MetricFindValue, ScopedVars } from '@grafana/data';
-import { DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
+import { config, DataSourceWithBackend, getTemplateSrv } from '@grafana/runtime';
 
 import {
   DataBridgeQuery,
@@ -40,6 +40,7 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
       connectionId: query.connectionId ? templateSrv.replace(query.connectionId, scopedVars) : undefined,
       databaseName: query.databaseName ? templateSrv.replace(query.databaseName, scopedVars) : undefined,
       datasetName: query.datasetName ? templateSrv.replace(query.datasetName, scopedVars) : undefined,
+      userLocale: config.language ?? config.bootData.user.language,
     };
   }
 

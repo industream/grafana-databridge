@@ -2,11 +2,39 @@ import { useMemo } from 'react';
 
 import { CatalogEntry, DisplayNamePreset } from '../types';
 
+type DisplayNameContext = { column?: string; aggregation?: string; assetPath?: string; connection?: string; locale?: string };
+
+function languageOf(locale: string): string {
+  return locale.split('-')[0].toLowerCase();
+}
+
+function firstForLanguage(descriptions: Record<string, string>, language: string): string | undefined {
+  if (!language) {
+    return undefined;
+  }
+  return Object.keys(descriptions)
+    .sort()
+    .map((locale) => (languageOf(locale) === language ? descriptions[locale] : undefined))
+    .find((description) => !!description);
+}
+
+/** Catalog description in the viewer's language: exact locale, same language, English, then the entry name. */
+export function localizedDescription(entry: CatalogEntry, locale?: string): string {
+  const descriptions = entry.metadata?.description ?? {};
+  return (
+    (locale ? descriptions[locale] : undefined) ||
+    firstForLanguage(descriptions, languageOf(locale ?? '')) ||
+    descriptions['en-US'] ||
+    firstForLanguage(descriptions, 'en') ||
+    entry.name
+  );
+}
+
 export function resolveDisplayName(
   entry: CatalogEntry | undefined,
   preset: DisplayNamePreset,
   pattern: string,
-  context?: { column?: string; aggregation?: string; assetPath?: string; connection?: string }
+  context?: DisplayNameContext
 ): string {
   if (!entry) {
     return context?.column ?? 'unknown';
@@ -19,6 +47,8 @@ export function resolveDisplayName(
       return entry.metadata?.description?.['en-US'] || entry.name;
     case 'descriptionDe':
       return entry.metadata?.description?.['de-DE'] || entry.name;
+    case 'description':
+      return localizedDescription(entry, context?.locale);
     case 'assetPath':
       return context?.assetPath || entry.name;
     case 'custom':
@@ -28,11 +58,7 @@ export function resolveDisplayName(
   }
 }
 
-function resolvePattern(
-  pattern: string,
-  entry: CatalogEntry,
-  context?: { column?: string; aggregation?: string; assetPath?: string; connection?: string }
-): string {
+function resolvePattern(pattern: string, entry: CatalogEntry, context?: DisplayNameContext): string {
   if (!pattern) {
     return entry.name;
   }
@@ -45,6 +71,9 @@ function resolvePattern(
   result = result.replace(/\{aggregation\}/g, context?.aggregation ?? '');
   result = result.replace(/\{asset\.path\}/g, context?.assetPath ?? '');
   result = result.replace(/\{connection\}/g, context?.connection ?? '');
+  if (result.includes('{description}')) {
+    result = result.replace(/\{description\}/g, localizedDescription(entry, context?.locale));
+  }
 
   if (entry.metadata?.description) {
     for (const [locale, desc] of Object.entries(entry.metadata.description)) {

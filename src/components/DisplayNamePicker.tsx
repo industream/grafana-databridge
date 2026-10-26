@@ -2,6 +2,7 @@ import React, { ChangeEvent } from 'react';
 import { css } from '@emotion/css';
 import { Combobox, InlineField, InlineFieldRow, Input, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
+import { config } from '@grafana/runtime';
 
 import { CatalogEntry, DisplayNamePreset } from '../types';
 import { resolveDisplayName } from '../hooks/useDisplayName';
@@ -19,6 +20,7 @@ const PRESET_OPTIONS = [
   { label: 'Tag Level 1', value: 'tagLevel1' as const },
   { label: 'Description (EN)', value: 'descriptionEn' as const },
   { label: 'Description (DE)', value: 'descriptionDe' as const },
+  { label: 'Description (user language)', value: 'description' as const },
   { label: 'Asset Path', value: 'assetPath' as const },
   { label: 'Custom Pattern', value: 'custom' as const },
 ];
@@ -36,7 +38,7 @@ export function DisplayNamePicker({
 
   const previewEntries = entries.slice(0, 3);
   const previews = previewEntries.map((entry) =>
-    resolveDisplayName(entry, preset, pattern, { column: entry.name })
+    resolveDisplayName(entry, preset, pattern, { column: entry.name, locale: config.language })
   );
 
   return (
@@ -57,7 +59,7 @@ export function DisplayNamePicker({
           <InlineField
             label="Pattern"
             labelWidth={LABEL_WIDTH}
-            tooltip="Variables: {name}, {tagLevel1}, {description.en-US}, {unit}, {label}, {aggregation}, {asset.path}"
+            tooltip="Variables: {name}, {tagLevel1}, {description} (user language), {description.en-US}, {unit}, {label}, {aggregation}, {asset.path}"
           >
             <Input
               value={pattern}

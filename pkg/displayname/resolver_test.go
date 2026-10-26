@@ -133,3 +133,49 @@ func TestResolve_EmptyPreset(t *testing.T) {
 		t.Errorf("expected entry name as default, got %q", result)
 	}
 }
+
+func TestResolve_DescriptionUsesTheViewerLanguage(t *testing.T) {
+	entry := makeEntry("Parts counter", "", map[string]string{"en-US": "Parts counter", "de-DE": "Stückzähler", "fr-FR": "Compteur de pièces"})
+
+	for locale, want := range map[string]string{"de-DE": "Stückzähler", "fr-FR": "Compteur de pièces", "en-US": "Parts counter"} {
+		if got := Resolve("description", "", &ResolveContext{Entry: entry, Locale: locale}); got != want {
+			t.Errorf("locale %s: expected %q, got %q", locale, want, got)
+		}
+	}
+}
+
+func TestResolve_DescriptionMatchesTheLanguageWhenTheRegionDiffers(t *testing.T) {
+	entry := makeEntry("Parts counter", "", map[string]string{"en-US": "Parts counter", "de-DE": "Stückzähler"})
+
+	if got := Resolve("description", "", &ResolveContext{Entry: entry, Locale: "de-AT"}); got != "Stückzähler" {
+		t.Errorf("expected the de-DE text for a de-AT viewer, got %q", got)
+	}
+}
+
+func TestResolve_DescriptionFallsBackToEnglishWithoutATranslation(t *testing.T) {
+	entry := makeEntry("Parts counter", "", map[string]string{"en-US": "Parts counter EN", "de-DE": "Stückzähler"})
+
+	if got := Resolve("description", "", &ResolveContext{Entry: entry, Locale: "pt-BR"}); got != "Parts counter EN" {
+		t.Errorf("expected the English text, got %q", got)
+	}
+	if got := Resolve("description", "", &ResolveContext{Entry: entry}); got != "Parts counter EN" {
+		t.Errorf("expected the English text when the locale is unknown, got %q", got)
+	}
+}
+
+func TestResolve_DescriptionFallsBackToTheEntryName(t *testing.T) {
+	entry := makeEntry("Parts counter", "", nil)
+
+	if got := Resolve("description", "", &ResolveContext{Entry: entry, Locale: "fr-FR"}); got != "Parts counter" {
+		t.Errorf("expected the entry name, got %q", got)
+	}
+}
+
+func TestResolve_CustomPatternDescriptionPlaceholderFollowsTheViewerLanguage(t *testing.T) {
+	entry := makeEntry("Parts counter", "", map[string]string{"en-US": "Parts counter", "fr-FR": "Compteur de pièces"})
+
+	got := Resolve("custom", "{description} ({unit})", &ResolveContext{Entry: entry, Locale: "fr-FR"})
+	if got != "Compteur de pièces (degC)" {
+		t.Errorf("expected the French text in the pattern, got %q", got)
+	}
+}

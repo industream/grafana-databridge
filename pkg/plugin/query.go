@@ -822,6 +822,7 @@ func (d *Datasource) applyDisplayNamesFromMap(ctx context.Context, frame *data.F
 			Column:      s.Column,
 			Aggregation: s.Aggregation,
 			AssetPath:   entryAssetPath,
+			Locale:      qd.UserLocale,
 		})
 
 		fc := &data.FieldConfig{
