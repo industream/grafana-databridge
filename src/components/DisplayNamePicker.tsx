@@ -2,10 +2,10 @@ import React, { ChangeEvent } from 'react';
 import { css } from '@emotion/css';
 import { Combobox, InlineField, InlineFieldRow, Input, useStyles2 } from '@grafana/ui';
 import { GrafanaTheme2 } from '@grafana/data';
-import { config } from '@grafana/runtime';
 
 import { CatalogEntry, DisplayNamePreset } from '../types';
 import { resolveDisplayName } from '../hooks/useDisplayName';
+import { viewerLanguage } from '../utils/localized';
 
 interface DisplayNamePickerProps {
   preset: DisplayNamePreset;
@@ -38,7 +38,7 @@ export function DisplayNamePicker({
 
   const previewEntries = entries.slice(0, 3);
   const previews = previewEntries.map((entry) =>
-    resolveDisplayName(entry, preset, pattern, { column: entry.name, locale: config.language })
+    resolveDisplayName(entry, preset, pattern, { column: entry.name, locale: viewerLanguage() })
   );
 
   return (

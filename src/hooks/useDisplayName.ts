@@ -1,33 +1,13 @@
 import { useMemo } from 'react';
 
 import { CatalogEntry, DisplayNamePreset } from '../types';
+import { pickLocalized } from '../utils/localized';
 
 type DisplayNameContext = { column?: string; aggregation?: string; assetPath?: string; connection?: string; locale?: string };
 
-function languageOf(locale: string): string {
-  return locale.split('-')[0].toLowerCase();
-}
-
-function firstForLanguage(descriptions: Record<string, string>, language: string): string | undefined {
-  if (!language) {
-    return undefined;
-  }
-  return Object.keys(descriptions)
-    .sort()
-    .map((locale) => (languageOf(locale) === language ? descriptions[locale] : undefined))
-    .find((description) => !!description);
-}
-
 /** Catalog description in the viewer's language: exact locale, same language, English, then the entry name. */
 export function localizedDescription(entry: CatalogEntry, locale?: string): string {
-  const descriptions = entry.metadata?.description ?? {};
-  return (
-    (locale ? descriptions[locale] : undefined) ||
-    firstForLanguage(descriptions, languageOf(locale ?? '')) ||
-    descriptions['en-US'] ||
-    firstForLanguage(descriptions, 'en') ||
-    entry.name
-  );
+  return pickLocalized(entry.metadata?.description ?? {}, locale) || entry.name;
 }
 
 export function resolveDisplayName(
