@@ -501,12 +501,12 @@ func buildRecordsQuery(qd *models.QueryDefinition, timeRange backend.TimeRange, 
 
 	// ORDER BY — use the time alias from time_window when in optimize mode
 	orderCol := qd.OrderByColumn
-	orderDir := qd.OrderByDirection
+	descending := strings.EqualFold(qd.OrderByDirection, "desc")
 	if orderCol == "" {
 		orderCol = "time"
-		orderDir = "asc"
+		descending = false
 	}
-	rq.OrderBy = append(rq.OrderBy, databridge.OrderClause{Column: orderCol, Direction: orderDir})
+	rq.OrderBy = append(rq.OrderBy, databridge.OrderClause{Column: orderCol, Descending: descending})
 
 	// LIMIT
 	if qd.Limit > 0 {

@@ -106,8 +106,8 @@ type GroupClause struct {
 
 // OrderClause represents an ORDER BY expression.
 type OrderClause struct {
-	Column    string `json:"column"`
-	Direction string `json:"direction"`
+	Column     string `json:"column"`
+	Descending bool   `json:"descending,omitempty"`
 }
 
 // WhereExpression is a boolean expression tree for the WHERE clause.
