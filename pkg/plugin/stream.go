@@ -211,7 +211,7 @@ func (d *Datasource) fetchAllTargets(ctx context.Context, targets []queryTarget,
 						},
 					},
 				},
-				OrderBy: []databridge.OrderClause{{Column: "time", Direction: "asc"}},
+				OrderBy: []databridge.OrderClause{{Column: "time"}},
 			}
 
 			resp, err := client.QueryRecords(ctx, target.databaseName, target.datasetName, rq)
@@ -289,7 +289,7 @@ func fetchLatestFrame(ctx context.Context, client *databridge.Client, databaseNa
 				},
 			},
 		},
-		OrderBy: []databridge.OrderClause{{Column: "time", Direction: "asc"}},
+		OrderBy: []databridge.OrderClause{{Column: "time"}},
 	}
 
 	resp, err := client.QueryRecords(ctx, databaseName, datasetName, rq)

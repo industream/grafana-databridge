@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -144,7 +145,7 @@ func TestBuildRecordsQuery_OptimizeDisplay(t *testing.T) {
 	}
 
 	// Should have ORDER BY time ASC
-	if len(rq.OrderBy) != 1 || rq.OrderBy[0].Column != "time" || rq.OrderBy[0].Direction != "asc" {
+	if len(rq.OrderBy) != 1 || rq.OrderBy[0].Column != "time" || rq.OrderBy[0].Descending {
 		t.Errorf("expected ORDER BY time asc, got %+v", rq.OrderBy)
 	}
 }
@@ -433,5 +434,37 @@ func TestBuildTimeRangeWhere_SingleCondition(t *testing.T) {
 	}
 	if where.Conditions[2].Operator != "greater" {
 		t.Errorf("expected 'greater', got %s", where.Conditions[2].Operator)
+	}
+}
+
+func TestBuildRecordsQuery_OrderByDescendingIsSentAsDataBridgeExpects(t *testing.T) {
+	// DataBridge reads {"column","descending":bool}; a "direction" field is ignored, so every
+	// query came back ascending and a "last 10 parts" table showed the oldest 10.
+	qd := &models.QueryDefinition{
+		Mode:             "raw",
+		Strategy:         "table",
+		Select:           []models.SelectDefinition{{Column: "serial"}},
+		OrderByColumn:    "time",
+		OrderByDirection: "desc",
+		Limit:            10,
+	}
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: time.Now().Add(-time.Hour), To: time.Now()}, 1000)
+
+	body, err := json.Marshal(rq.OrderBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(body), `[{"column":"time","descending":true}]`; got != want {
+		t.Errorf("order by sent to DataBridge = %s, want %s", got, want)
+	}
+}
+
+func TestBuildRecordsQuery_DefaultOrderIsTimeAscending(t *testing.T) {
+	qd := &models.QueryDefinition{Mode: "raw", Strategy: "table", Select: []models.SelectDefinition{{Column: "serial"}}}
+	rq := buildRecordsQuery(qd, backend.TimeRange{From: time.Now().Add(-time.Hour), To: time.Now()}, 1000)
+
+	body, _ := json.Marshal(rq.OrderBy)
+	if got, want := string(body), `[{"column":"time"}]`; got != want {
+		t.Errorf("default order by = %s, want %s", got, want)
 	}
 }
