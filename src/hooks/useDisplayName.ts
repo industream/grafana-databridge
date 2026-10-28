@@ -1,12 +1,20 @@
 import { useMemo } from 'react';
 
 import { CatalogEntry, DisplayNamePreset } from '../types';
+import { pickLocalized } from '../utils/localized';
+
+type DisplayNameContext = { column?: string; aggregation?: string; assetPath?: string; connection?: string; locale?: string };
+
+/** Catalog description in the viewer's language: exact locale, same language, English, then the entry name. */
+export function localizedDescription(entry: CatalogEntry, locale?: string): string {
+  return pickLocalized(entry.metadata?.description ?? {}, locale) || entry.name;
+}
 
 export function resolveDisplayName(
   entry: CatalogEntry | undefined,
   preset: DisplayNamePreset,
   pattern: string,
-  context?: { column?: string; aggregation?: string; assetPath?: string; connection?: string }
+  context?: DisplayNameContext
 ): string {
   if (!entry) {
     return context?.column ?? 'unknown';
@@ -19,6 +27,8 @@ export function resolveDisplayName(
       return entry.metadata?.description?.['en-US'] || entry.name;
     case 'descriptionDe':
       return entry.metadata?.description?.['de-DE'] || entry.name;
+    case 'description':
+      return localizedDescription(entry, context?.locale);
     case 'assetPath':
       return context?.assetPath || entry.name;
     case 'custom':
@@ -28,11 +38,7 @@ export function resolveDisplayName(
   }
 }
 
-function resolvePattern(
-  pattern: string,
-  entry: CatalogEntry,
-  context?: { column?: string; aggregation?: string; assetPath?: string; connection?: string }
-): string {
+function resolvePattern(pattern: string, entry: CatalogEntry, context?: DisplayNameContext): string {
   if (!pattern) {
     return entry.name;
   }
@@ -45,6 +51,9 @@ function resolvePattern(
   result = result.replace(/\{aggregation\}/g, context?.aggregation ?? '');
   result = result.replace(/\{asset\.path\}/g, context?.assetPath ?? '');
   result = result.replace(/\{connection\}/g, context?.connection ?? '');
+  if (result.includes('{description}')) {
+    result = result.replace(/\{description\}/g, localizedDescription(entry, context?.locale));
+  }
 
   if (entry.metadata?.description) {
     for (const [locale, desc] of Object.entries(entry.metadata.description)) {

@@ -179,7 +179,7 @@ func (d *Datasource) handleCatalogStatsQuery(ctx context.Context, query backend.
 				continue
 			}
 			columns = append(columns, s.Column)
-			names[s.Column] = d.statsDisplayName(preset, qd.DisplayNamePattern, s, entryMap, byColumn)
+			names[s.Column] = d.statsDisplayName(preset, qd.DisplayNamePattern, qd.UserLocale, s, entryMap, byColumn)
 		}
 
 		rows, err := d.computeStatsRows(ctx, t.bridgeUrl, t.databaseName, t.datasetName, columns, statOrder, query.TimeRange, names)
@@ -233,7 +233,7 @@ func (d *Datasource) computeStatsRows(ctx context.Context, bridgeUrl, databaseNa
 
 // statsDisplayName resolves a signal's display name from its catalog entry, falling
 // back to the raw column when the entry cannot be resolved.
-func (d *Datasource) statsDisplayName(preset, pattern string, s *models.SelectDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) string {
+func (d *Datasource) statsDisplayName(preset, pattern, locale string, s *models.SelectDefinition, entryMap, byColumn map[string]*datacatalog.CatalogEntry) string {
 	entry := resolveEntry(s, entryMap, byColumn)
 	if entry == nil {
 		return s.Column
@@ -241,6 +241,7 @@ func (d *Datasource) statsDisplayName(preset, pattern string, s *models.SelectDe
 	name := displayname.Resolve(preset, pattern, &displayname.ResolveContext{
 		Entry:  entry,
 		Column: s.Column,
+		Locale: locale,
 	})
 	if name == "" {
 		return s.Column

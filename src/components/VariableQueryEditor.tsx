@@ -1,11 +1,11 @@
 import React, { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Combobox, InlineField, InlineFieldRow, Input } from '@grafana/ui';
+import { Combobox, InlineField, InlineFieldRow, Input, TextArea } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 
 import { DataSource } from '../datasource';
 import { DataBridgeOptions, DataBridgeQuery, SourceConnection } from '../types';
 
-export type VariableQueryType = 'connections' | 'databases' | 'datasets' | 'entries' | 'labels';
+export type VariableQueryType = 'connections' | 'databases' | 'datasets' | 'entries' | 'labels' | 'localizedText';
 
 export interface VariableQuery {
   type: VariableQueryType;
@@ -13,6 +13,8 @@ export interface VariableQuery {
   databaseName?: string;
   label?: string;
   search?: string;
+  /** For 'localizedText': one "locale=text" pair per line, or a JSON object. */
+  translations?: string;
 }
 
 const TYPE_OPTIONS = [
@@ -21,6 +23,7 @@ const TYPE_OPTIONS = [
   { label: 'Datasets', value: 'datasets' },
   { label: 'Catalog Entries', value: 'entries' },
   { label: 'Labels', value: 'labels' },
+  { label: 'Localized text', value: 'localizedText' },
 ];
 
 const LABEL_WIDTH = 14;
@@ -94,6 +97,24 @@ export function VariableQueryEditor({ query, onChange, datasource }: Props) {
               }
               placeholder="Database name or $variable"
               width={24}
+            />
+          </InlineField>
+        </InlineFieldRow>
+      )}
+
+      {variableQuery.type === 'localizedText' && (
+        <InlineFieldRow>
+          <InlineField
+            label="Translations"
+            labelWidth={LABEL_WIDTH}
+            tooltip="One locale=text pair per line. The viewer's Grafana language is used, English when missing. Use the variable in titles as ${name}."
+            grow
+          >
+            <TextArea
+              value={variableQuery.translations ?? ''}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => update({ translations: e.target.value })}
+              placeholder={'en-US=Line status\nde-DE=Linienstatus\nfr-FR=État de la ligne'}
+              rows={4}
             />
           </InlineField>
         </InlineFieldRow>

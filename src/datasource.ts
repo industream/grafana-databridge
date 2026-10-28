@@ -15,6 +15,7 @@ import {
   Label,
 } from './types';
 import { VariableQuery } from './components/VariableQueryEditor';
+import { parseTranslations, pickLocalized, viewerLanguage } from './utils/localized';
 
 export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridgeOptions> {
   readonly settings: DataBridgeOptions;
@@ -40,11 +41,16 @@ export class DataSource extends DataSourceWithBackend<DataBridgeQuery, DataBridg
       connectionId: query.connectionId ? templateSrv.replace(query.connectionId, scopedVars) : undefined,
       databaseName: query.databaseName ? templateSrv.replace(query.databaseName, scopedVars) : undefined,
       datasetName: query.datasetName ? templateSrv.replace(query.datasetName, scopedVars) : undefined,
+      userLocale: viewerLanguage(),
     };
   }
 
   async metricFindQuery(query: DataBridgeQuery): Promise<MetricFindValue[]> {
     const vq: VariableQuery = (query as DataBridgeQuery & { variableQuery?: VariableQuery }).variableQuery ?? { type: 'connections' };
+    if (vq.type === 'localizedText') {
+      const text = pickLocalized(parseTranslations(vq.translations ?? ''), viewerLanguage()) ?? '';
+      return [{ text, value: text }];
+    }
     const templateSrv = getTemplateSrv();
 
     const params: Record<string, string> = { type: vq.type };

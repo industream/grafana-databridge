@@ -27,6 +27,8 @@ type QueryDefinition struct {
 	OrderByDirection   string             `json:"orderByDirection,omitempty"`
 	DisplayNamePreset  string             `json:"displayNamePreset,omitempty"`
 	DisplayNamePattern string             `json:"displayNamePattern,omitempty"`
+	// UserLocale is the viewer's Grafana language (e.g. "de-DE"), used by the "description" display name preset.
+	UserLocale string `json:"userLocale,omitempty"`
 	// Transforms is the query-time transform pipeline, sent by the frontend in the
 	// exact DataBridge wrapper-object shape and forwarded as-is to /records/query.
 	Transforms []databridge.Transform `json:"transforms,omitempty"`

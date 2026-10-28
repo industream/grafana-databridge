@@ -77,6 +77,7 @@ export type DisplayNamePreset =
   | 'tagLevel1'
   | 'descriptionEn'
   | 'descriptionDe'
+  | 'description'
   | 'assetPath'
   | 'custom';
 
@@ -147,6 +148,8 @@ export interface DataBridgeQuery extends DataQuery {
   // Display
   displayNamePreset?: DisplayNamePreset;
   displayNamePattern?: string;
+  /** Viewer's Grafana language, added by the datasource for the 'description' preset. */
+  userLocale?: string;
 
   // Query-time transform pipeline (DataBridge v2.3.0)
   transforms?: Transform[];
